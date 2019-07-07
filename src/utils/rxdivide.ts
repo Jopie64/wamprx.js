@@ -1,21 +1,19 @@
-import { Observable, Observer, Subscription } from 'rxjs';
+import { Observable, Subscription, Subscriber } from 'rxjs';
 
 type KeySelector<TKey, TValue> = (value: TValue) => TKey;
 
-interface IObservableDivider<TKey, TValue> {
-    getDivision(key: TKey): Observable<TValue>;
-}
+type GetDivision<TKey, TValue> = (key: TKey) => Observable<TValue>;
 
 type DivideFunc = <TKey extends keyof {[key: string]: any}, TValue>(
         keySelector: KeySelector<TKey, TValue>,
         obs$: Observable<TValue>
-    ) => IObservableDivider<TKey, TValue>;
+    ) => GetDivision<TKey, TValue>;
 
 export const divide: DivideFunc = <TKey extends keyof {[key: string]: any}, TValue>(
     keySelector: KeySelector<TKey, TValue>,
     obs$: Observable<TValue>
 ) => {
-    let divisions: {[key: string]: Observer<TValue>} = {};
+    let divisions: {[key: string]: Subscriber<TValue>} = {};
 
     let srcSubscription: Subscription | null = null;
 
@@ -58,14 +56,12 @@ export const divide: DivideFunc = <TKey extends keyof {[key: string]: any}, TVal
         srcSubscription = null;
     }
 
-    return {
-        getDivision: key => Observable.create((observer: Observer<TValue>) => {
-            divisions[key] = observer;
-            ensureSubscribed();
-            return () => {
-                delete divisions[key];
-                maybeUnsubscribe();
-            };
-        })
-    }
+    return key => new Observable<TValue>(observer => {
+        divisions[key] = observer;
+        ensureSubscribed();
+        return () => {
+            delete divisions[key];
+            maybeUnsubscribe();
+        };
+    });
 };
