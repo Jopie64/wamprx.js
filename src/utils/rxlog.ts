@@ -3,6 +3,9 @@ import { ILogger, makeConsoleLogger } from './logger';
 
 let creationIdGen = 0;
 
+// To make it easier to test
+export const resetCreationIdGen = () => creationIdGen = 0;
+
 export const logSubUnsub = <T>(logger: ILogger, logNext: boolean) => {
   const observerId = ++creationIdGen;
   let subscriptionIdGen = 0;

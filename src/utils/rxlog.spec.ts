@@ -1,11 +1,13 @@
 import 'jasmine';
-import { logSubUnsub } from './rxlog';
+import { logSubUnsub, resetCreationIdGen } from './rxlog';
 import { makeConsoleLogger } from './logger';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 describe('utils', () => {
+    // also indirectly tests rxhook
     describe('logObs', () => {
         it('logs all observable events', () => {
+            resetCreationIdGen();
             const logger = makeConsoleLogger('test');
             spyOn(logger, 'log');
 
@@ -33,6 +35,23 @@ describe('utils', () => {
             expect(logger.log).toHaveBeenCalledWith('1-2-NEXT-4', 3);
             expect(logger.log).toHaveBeenCalledWith('1-2-COMPLETE-5');
             expect(logger.log).toHaveBeenCalledWith('1-2-UNSUBSCRIBED-6');
+        });
+
+        it('logs errors', () => {
+            resetCreationIdGen();
+            const logger = makeConsoleLogger('test');
+            spyOn(logger, 'log');
+
+            const obs = throwError(new Error('uhoh...')).pipe(logSubUnsub(logger, true));
+
+            expect(logger.log).toHaveBeenCalledTimes(1);
+            expect(logger.log).toHaveBeenCalledWith('1-CREATED');
+
+            obs.subscribe(null, () => {});
+            expect(logger.log).toHaveBeenCalledTimes(4);
+            expect(logger.log).toHaveBeenCalledWith('1-1-SUBSCRIBED-1');
+            expect(logger.log).toHaveBeenCalledWith('1-1-ERROR-2', new Error('uhoh...'));
+            expect(logger.log).toHaveBeenCalledWith('1-1-UNSUBSCRIBED-3');
         });
     });
 });
