@@ -1,9 +1,9 @@
-
 let nextId = 0;
 
 export const makeId = () => ++nextId;
 
 type LogFunc = (...msg: any[]) => void;
+
 export interface ILogger {
     log:   LogFunc;
     warn:  LogFunc;
