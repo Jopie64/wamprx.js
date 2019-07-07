@@ -2,13 +2,20 @@
   "name": "wamprx",
   "version": "1.0.0",
   "description": "Simple WAMP client library heavily relying on rxjs and TypeScript",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "WAMP"
   ],
   "author": "Johan 't Hart",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "rxjs": "^6.5.2"
+  },
+  "devDependencies": {
+    "typescript": "^3.5.2"
+  }
 }
