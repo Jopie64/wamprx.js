@@ -1,4 +1,4 @@
-import { Observable, Subject, of } from 'rxjs';
+import { Observable, Subject, of, concat, never } from 'rxjs';
 import { WampWebSocket, connectWampChannel, WampChannel } from './wamp';
 
 describe('wamp', () => {
@@ -16,7 +16,7 @@ describe('wamp', () => {
         const receive$ = new Subject<string>();
         const mockWebSocket = makeMockWebSocket(receive$);
         spyOn(mockWebSocket, 'send');
-        const connectWebSocket = connectMockWebSocket(of(mockWebSocket));
+        const connectWebSocket = connectMockWebSocket(concat(of(mockWebSocket), never()));
 
         const channel$ = connectWampChannel('fakeurl', 'fakeProtocol', undefined, connectWebSocket);
 
