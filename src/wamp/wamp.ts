@@ -1,8 +1,6 @@
 import { Observable, of, merge, throwError, defer } from 'rxjs';
-import { switchMap, map, mapTo, take, takeWhile, publishReplay, refCount, finalize } from 'rxjs/operators';
-import { divide } from '../utils/rxdivide';
-import { logObs } from '../utils/rxlog';
-import { hookObs } from '../utils/rxhook';
+import { switchMap, map, take, takeWhile, publishReplay, refCount, finalize } from 'rxjs/operators';
+import { divide, logObs, hookObs } from '../utils';
 
 // Minimal WebSocket interface needed for this WAMP implementation
 export interface WampWebSocket {
@@ -11,6 +9,25 @@ export interface WampWebSocket {
 };
 
 export type ConnectWebSocket = (url: string, protocol: string) => Observable<WampWebSocket>;
+
+export type Args = any[];
+export type Dict = {[key: string]: any};
+export type ArgsAndDict = [Args?, Dict?];
+
+export type ChallengeResponse = string | [string, Dict];
+
+export interface LoginAuth {
+    authid: string;
+    authmethods: string[];
+    challenge: (method: string, extra: Dict) => ChallengeResponse;
+}
+
+export interface WampChannel {
+    logon(realm: string, auth?: LoginAuth): Promise<void>;
+    call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
+    subscribe(uri: string): Observable<ArgsAndDict>;
+}
+
 
 const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
     const webSocket$ = new Observable<WebSocket>(newChannelObserver => {
@@ -65,12 +82,6 @@ enum WampMessageEnum {
     YIELD = 70
 };
 
-type Args = any[];
-type Dict = {[key: string]: any};
-
-type ArgsAndDict = [Args?, Dict?];
-
-
 interface HelloMsgDetails {
     roles: {
         caller?: { features?: { progressive_call_results?: boolean, call_canceling?: boolean }}
@@ -103,20 +114,6 @@ type WampMessage =
     WampErrorMsg |
     WampCallMsg | WampResultMsg | WampCancelMsg |
     WampSubscribeMsg | WampSubscribedMsg | WampUnsubscribeMsg | WampUnsubscribedMsg | WampEventMsg;
-
-type ChallengeResponse = string | [string, Dict];
-
-export interface LoginAuth {
-    authid: string;
-    authmethods: string[];
-    challenge: (method: string, extra: Dict) => ChallengeResponse;
-}
-
-export interface WampChannel {
-    logon(realm: string, auth?: LoginAuth): Promise<void>;
-    call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
-    subscribe(uri: string): Observable<ArgsAndDict>;
-}
 
 const trimArray = (a: any[]): any[] => {
     while (a.length > 0 && a[a.length - 1] === undefined) {
