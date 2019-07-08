@@ -9,7 +9,7 @@ It heavily relies on [RxJS](https://www.learnrxjs.io/), which is for now it's on
 ```typescript
 connectWampChannel('http://my.wamp.url/ws', 'realm1').pipe(
     switchMap(channel => channel.call('add', [1, 2])))
-    .subscribe(answer => answer != 3
+    .subscribe(answer => answer !== 3
         ? console.error(`${answer} is the wrong answer!`)
         : console.log('Answer 3 is correct'));
 ```
@@ -21,7 +21,7 @@ const channel = await connectWampChannel('http://my.wamp.url/ws', 'realm1').toPr
 
 const answer = await channel.call('add', [1, 2]).toPromise();
 
-if (answer != 3) {
+if (answer !== 3) {
     console.error(`${answer} is the wrong answer!`);
 } else {
     console.log('Answer 3 is correct');
