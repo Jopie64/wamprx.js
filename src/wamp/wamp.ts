@@ -1,4 +1,4 @@
-import { Observable, of, merge, throwError, defer } from 'rxjs';
+import { Observable, of, merge, throwError, defer, concat } from 'rxjs';
 import { switchMap, map, take, takeWhile, publishReplay, refCount, finalize } from 'rxjs/operators';
 import { divide, logObs, hookObs } from '../utils';
 
@@ -52,7 +52,7 @@ const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
         })));
 
     return webSocket$.pipe(
-        map(ws => ({ send: ws.send, receive$ })));
+        map(ws => ({ send: data => ws.send(data), receive$ })));
 };
 
 enum WampMessageEnum {
@@ -253,7 +253,10 @@ const createWampChannelFromWs = (ws: WampWebSocket): WampChannel => {
 };
 
 export const connectWampChannel = (url: string, realm: string, auth?: LoginAuth, connectWebSocket: ConnectWebSocket = defaultConnectWebSocket) =>
-    connectWebSocket(url, 'wamp.2.json').pipe(
+    concat(
+        connectWebSocket(url, 'wamp.2.json'),
+        throwError(new Error('websocket disconnected'))
+    ).pipe(
         map(createWampChannelFromWs),
         switchMap(channel => channel.logon(realm, auth).then(_ => channel))
     );
