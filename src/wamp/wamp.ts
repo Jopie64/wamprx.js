@@ -113,9 +113,9 @@ export interface LoginAuth {
 }
 
 export interface WampChannel {
+    logon(realm: string, auth?: LoginAuth): Promise<void>;
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
     subscribe(uri: string): Observable<ArgsAndDict>;
-    logon(realm: string, auth?: LoginAuth): Promise<void>;
 }
 
 const trimArray = (a: any[]): any[] => {
