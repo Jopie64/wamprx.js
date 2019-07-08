@@ -4,15 +4,39 @@ import { divide } from '../utils/rxdivide';
 import { logObs } from '../utils/rxlog';
 import { hookObs } from '../utils/rxhook';
 
+// Minimal WebSocket interface needed for this WAMP implementation
+export interface WampWebSocket {
+    send: (data: string) => void;
+    receive$: Observable<string>;
+};
 
-const connectWebSocket = (url: string, protocol: string) =>
-    new Observable<WebSocket>(newChannelObserver => {
+export type ConnectWebSocket = (url: string, protocol: string) => Observable<WampWebSocket>;
+
+const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
+    const webSocket$ = new Observable<WebSocket>(newChannelObserver => {
         const ws = new WebSocket(url, protocol);
         ws.onopen = () => newChannelObserver.next(ws);
         ws.onclose = () => newChannelObserver.complete();
         ws.onerror = e => newChannelObserver.error(e);
         return () => ws.close();
-    }).pipe(logObs('connectWebSocket'));
+    }).pipe(
+        logObs('connectWebSocket'),
+        publishReplay(1), refCount());
+
+    const receive$ = webSocket$.pipe(
+        switchMap(ws => new Observable<string>(msgObserver => {
+            const onMsg = (ev: MessageEvent) => msgObserver.next(ev.data);
+            ws.onmessage = onMsg;
+            return () => {
+                if (ws.onmessage === onMsg) {
+                    ws.onmessage = null;
+                }
+            };
+        })));
+
+    return webSocket$.pipe(
+        map(ws => ({ send: ws.send, receive$ })));
+};
 
 enum WampMessageEnum {
     HELLO = 1,
@@ -101,19 +125,11 @@ const trimArray = (a: any[]): any[] => {
     return a;
 }
 
-const createWampChannelFromWs = (ws: WebSocket, lifetime$: Observable<boolean>): WampChannel => {
+const createWampChannelFromWs = (ws: WampWebSocket): WampChannel => {
 
     // Initial stuff
-    const message$ = lifetime$.pipe(
-        switchMap(_ => new Observable<WampMessage>(msgObserver => {
-            const onMsg = (ev: MessageEvent) => msgObserver.next(JSON.parse(ev.data));
-            ws.onmessage = onMsg;
-            return () => {
-                if (ws.onmessage === onMsg) {
-                    ws.onmessage = null;
-                }
-            };
-        })),
+    const message$ = ws.receive$.pipe(
+        map(data => JSON.parse(data) as WampMessage),
         logObs('wamp message'));
 
     const getMsgOfType = divide((msg: WampMessage) => msg[0], message$);
@@ -239,12 +255,8 @@ const createWampChannelFromWs = (ws: WebSocket, lifetime$: Observable<boolean>):
     };
 };
 
-export const connectWampChannel = (url: string, realm: string, auth?: LoginAuth) => {
-    const webSocket$ = connectWebSocket(url, 'wamp.2.json').pipe(
-        publishReplay(1), refCount()
-    );
-    return webSocket$.pipe(
-        map(ws => createWampChannelFromWs(ws, webSocket$.pipe(mapTo(true)))),
+export const connectWampChannel = (url: string, realm: string, auth?: LoginAuth, connectWebSocket: ConnectWebSocket = defaultConnectWebSocket) =>
+    connectWebSocket(url, 'wamp.2.json').pipe(
+        map(createWampChannelFromWs),
         switchMap(channel => channel.logon(realm, auth).then(_ => channel))
     );
-};
