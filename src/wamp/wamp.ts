@@ -1,6 +1,6 @@
 import { Observable, of, merge, throwError, defer, concat } from 'rxjs';
 import { switchMap, map, take, takeWhile, publishReplay, refCount, finalize } from 'rxjs/operators';
-import { divide, logObs, hookObs } from '../utils';
+import { divide, logObs, hookObs } from 'rxjs-utilities';
 
 // Minimal WebSocket interface needed for this WAMP implementation
 export interface WampWebSocket {
