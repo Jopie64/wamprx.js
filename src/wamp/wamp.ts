@@ -23,13 +23,11 @@ export interface LoginAuth {
 }
 
 export interface WampChannel {
-    logon(realm: string, auth?: LoginAuth): Promise<void>;
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
 
-
-const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
+export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
     const webSocket$ = new Observable<WebSocket>(newChannelObserver => {
         const ws = new WebSocket(url, protocol);
         ws.onopen = () => newChannelObserver.next(ws);
@@ -122,7 +120,11 @@ const trimArray = (a: any[]): any[] => {
     return a;
 }
 
-const createWampChannelFromWs = (ws: WampWebSocket): WampChannel => {
+interface WampChannelWithLogon extends WampChannel {
+    logon(realm: string, auth?: LoginAuth): Promise<void>;
+}
+
+const createWampChannelFromWs = (ws: WampWebSocket): WampChannelWithLogon => {
 
     // Initial stuff
     const message$ = ws.receive$.pipe(
@@ -252,11 +254,15 @@ const createWampChannelFromWs = (ws: WampWebSocket): WampChannel => {
     };
 };
 
-export const connectWampChannel = (url: string, realm: string, auth?: LoginAuth, connectWebSocket: ConnectWebSocket = defaultConnectWebSocket) =>
+export const connectWampChannel = (
+    url: string, realm: string, auth?: LoginAuth,
+    connectWebSocket: ConnectWebSocket = defaultConnectWebSocket
+): Observable<WampChannel> =>
     concat(
         connectWebSocket(url, 'wamp.2.json'),
         throwError(new Error('websocket disconnected'))
     ).pipe(
         map(createWampChannelFromWs),
-        switchMap(channel => channel.logon(realm, auth).then(_ => channel))
+        switchMap(channel => channel.logon(realm, auth).then(_ => channel)),
+        map(({logon, ...channel}): WampChannel => channel)
     );

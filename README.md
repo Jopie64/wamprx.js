@@ -37,7 +37,6 @@ It for now only supports a subset of the total featureset. The interface definit
 
 ```typescript
 interface WampChannel {
-    logon(realm: string, auth?: LoginAuth): Promise<void>;
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
