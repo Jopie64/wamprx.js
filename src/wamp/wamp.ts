@@ -1,6 +1,6 @@
 import { Observable, of, merge, throwError, defer, concat } from 'rxjs';
 import { switchMap, map, take, takeWhile, publishReplay, refCount, finalize } from 'rxjs/operators';
-import { divide, logObs, hookObs } from 'rxjs-utilities';
+import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket interface needed for this WAMP implementation
 export interface WampWebSocket {
@@ -35,7 +35,6 @@ export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
         ws.onerror = e => newChannelObserver.error(e);
         return () => ws.close();
     }).pipe(
-        logObs('connectWebSocket'),
         publishReplay(1), refCount());
 
     const receive$ = webSocket$.pipe(
@@ -52,6 +51,8 @@ export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
     return webSocket$.pipe(
         map(ws => ({ send: data => ws.send(data), receive$ })));
 };
+
+export type MakeLogger = (hdr: string) => ILogger;
 
 enum WampMessageEnum {
     HELLO = 1,
@@ -124,12 +125,16 @@ interface WampChannelWithLogon extends WampChannel {
     logon(realm: string, auth?: LoginAuth): Promise<void>;
 }
 
-const createWampChannelFromWs = (ws: WampWebSocket): WampChannelWithLogon => {
+let nextIdChannel = 0;
 
+const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogger): WampChannelWithLogon => {
+    const idChannel = ++nextIdChannel;
+    const logger = makeLogger(`${idChannel}/`);
+    const logObs = <T>(hdr: string) => logSubUnsub<T>(makeLogger(`${idChannel}/${hdr}`), true);
     // Initial stuff
     const message$ = ws.receive$.pipe(
         map(data => JSON.parse(data) as WampMessage),
-        logObs('wamp message'));
+        logObs('receive'));
 
     const getMsgOfType = divide((msg: WampMessage) => msg[0], message$);
 
@@ -143,7 +148,7 @@ const createWampChannelFromWs = (ws: WampWebSocket): WampChannelWithLogon => {
 
     const send = (msg: WampMessage) => {
         const trimmedMsg = trimArray(msg);
-        console.debug('*** Sending', trimmedMsg);
+        logger.log('send', trimmedMsg);
         ws.send(JSON.stringify(trimmedMsg));
     };
 
@@ -254,15 +259,31 @@ const createWampChannelFromWs = (ws: WampWebSocket): WampChannelWithLogon => {
     };
 };
 
+export const makeNullLogger = (): ILogger => ({
+    debug: () => {},
+    log: () => {},
+    warn: () => {},
+    error: () => {}
+});
+
+// Redefined here, so in the console you can see it is logged from wamp.js
+export const makeConsoleLogger: MakeLogger = hdr => ({
+    debug: (...msg) => console.debug(hdr, ...msg),
+    log: (...msg)   => console.log(hdr, ...msg),
+    warn: (...msg)  => console.warn(hdr, ...msg),
+    error: (...msg) => console.error(hdr, ...msg)
+});
+
 export const connectWampChannel = (
     url: string, realm: string, auth?: LoginAuth,
-    connectWebSocket: ConnectWebSocket = defaultConnectWebSocket
+    connectWebSocket: ConnectWebSocket = defaultConnectWebSocket,
+    makeLogger: MakeLogger = makeNullLogger
 ): Observable<WampChannel> =>
     concat(
         connectWebSocket(url, 'wamp.2.json'),
         throwError(new Error('websocket disconnected'))
     ).pipe(
-        map(createWampChannelFromWs),
+        map(ws => createWampChannelFromWs(ws, makeLogger)),
         switchMap(channel => channel.logon(realm, auth).then(_ => channel)),
         map(({logon, ...channel}): WampChannel => channel)
     );

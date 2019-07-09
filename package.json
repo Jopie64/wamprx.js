@@ -14,7 +14,7 @@
   "license": "ISC",
   "dependencies": {
     "rxjs": "^6.5.2",
-    "rxjs-utilities": "^1.0.0"
+    "rxjs-utilities": "^1.0.1"
   },
   "devDependencies": {
     "@types/jasmine": "^3.3.13",
