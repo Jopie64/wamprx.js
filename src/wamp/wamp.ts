@@ -127,7 +127,7 @@ interface WampChannelWithLogon extends WampChannel {
 
 let nextIdChannel = 0;
 
-const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogger): WampChannelWithLogon => {
+export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogger, initialReqId?: number): WampChannelWithLogon => {
     const idChannel = ++nextIdChannel;
     const logger = makeLogger(`${idChannel}/`);
     const logObs = <T>(hdr: string) => logSubUnsub<T>(makeLogger(`${idChannel}/${hdr}`), true);
@@ -136,13 +136,13 @@ const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogger): Wam
         map(data => JSON.parse(data) as WampMessage),
         logObs('receive'));
 
-    const getMsgOfType = divide((msg: WampMessage) => msg[0], message$);
+    const getMsgOfType = divide(([msgType]) => msgType, message$);
 
     // Hopefully we find a way to not require all this casting stuff.
     // Type T should be derivable from msgType somehow...
     // But the keyof operator will only yield a string union when used on enums
-    const receive$ = <T>(msgType: WampMessageEnum) =>
-        getMsgOfType(msgType as any).pipe(
+    const receive$ = <T>(msgType: WampMessage[0]) =>
+        getMsgOfType(msgType).pipe(
             map(msg => msg as unknown as T)
         );
 
@@ -194,7 +194,7 @@ const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogger): Wam
     }
 
     // Requests general
-    let nextReqId = Math.floor(Math.random() * 16777216);
+    let nextReqId = initialReqId || Math.floor(Math.random() * 16777216);
     const error$ = divide(([,, reqId]: WampErrorMsg) => reqId, receive$<WampErrorMsg>(WampMessageEnum.ERROR));
     const throwWhenError$ = (reqId: number) => error$(reqId).pipe(
         switchMap(([,,, ...e]) => throwError(e)));
