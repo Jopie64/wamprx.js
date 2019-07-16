@@ -1,5 +1,5 @@
 import { Observable, of, merge, throwError, defer } from 'rxjs';
-import { switchMap, map, take, takeWhile, finalize, shareReplay } from 'rxjs/operators';
+import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket interface needed for this WAMP implementation
@@ -102,6 +102,7 @@ interface CancelMsgOptions { mode: 'skip' | 'kill' | 'killnowait' }
 
 type WampHelloMsg = [WampMessageEnum.HELLO, string, HelloMsgDetails];
 type WampChallengeMsg = [WampMessageEnum.CHALLENGE, string, Dict];
+type WampAbortMsg = [WampMessageEnum.ABORT, Dict, string];
 type WampAuthenticateMsg = [WampMessageEnum.AUTHENTICATE, string, Dict];
 type WampWelcomeMsg = [WampMessageEnum.WELCOME, number, Dict];
 type WampErrorMsg = [WampMessageEnum.ERROR, WampMessageEnum, number, Dict, string, Args?, Dict?];
@@ -115,7 +116,7 @@ type WampUnsubscribedMsg = [WampMessageEnum.UNSUBSCRIBED, number];
 type WampEventMsg = [WampMessageEnum.EVENT, number, number, EventMsgDetails, Args?, Dict?];
 
 type WampMessage =
-    WampHelloMsg | WampChallengeMsg | WampAuthenticateMsg | WampWelcomeMsg |
+    WampHelloMsg | WampChallengeMsg | WampAuthenticateMsg | WampWelcomeMsg | WampAbortMsg |
     WampErrorMsg |
     WampCallMsg | WampResultMsg | WampCancelMsg |
     WampSubscribeMsg | WampSubscribedMsg | WampUnsubscribeMsg | WampUnsubscribedMsg | WampEventMsg;
@@ -173,10 +174,11 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
         send([WampMessageEnum.HELLO, realm, helloDetails]);
         const welcomeOrChallenge$ = merge(
             receive$<WampWelcomeMsg>(WampMessageEnum.WELCOME),
-            receive$<WampChallengeMsg>(WampMessageEnum.CHALLENGE)
+            receive$<WampChallengeMsg>(WampMessageEnum.CHALLENGE),
+            receive$<WampAbortMsg>(WampMessageEnum.ABORT)
+                .pipe(flatMap(([, ...error]) => throwError(error)))
         ).pipe(take(1));
-        while(true)
-        {
+        while(true) {
             const welcomeOrChallenge = await welcomeOrChallenge$.toPromise();
             if (welcomeOrChallenge[0] === WampMessageEnum.WELCOME) {
                 return;
