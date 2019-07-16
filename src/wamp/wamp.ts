@@ -1,5 +1,5 @@
-import { Observable, of, merge, throwError, defer, concat } from 'rxjs';
-import { switchMap, map, take, takeWhile, publishReplay, refCount, finalize } from 'rxjs/operators';
+import { Observable, of, merge, throwError, defer } from 'rxjs';
+import { switchMap, map, take, takeWhile, finalize, shareReplay } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket interface needed for this WAMP implementation
@@ -31,11 +31,17 @@ export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
     const webSocket$ = new Observable<WebSocket>(newChannelObserver => {
         const ws = new WebSocket(url, protocol);
         ws.onopen = () => newChannelObserver.next(ws);
-        ws.onclose = () => newChannelObserver.complete();
+        ws.onclose = () => newChannelObserver.error(new Error('Websocket disconnected'));
         ws.onerror = e => newChannelObserver.error(e);
-        return () => ws.close();
+        return () => {
+            try {
+                ws.close();
+            } catch(_) {
+                // Ignore 'close()' exceptions. We're not interested in this websocket anymore
+            }
+        };
     }).pipe(
-        publishReplay(1), refCount());
+        shareReplay({bufferSize: 1, refCount: true}));
 
     const receive$ = webSocket$.pipe(
         switchMap(ws => new Observable<string>(msgObserver => {
@@ -279,10 +285,7 @@ export const connectWampChannel = (
     connectWebSocket: ConnectWebSocket = defaultConnectWebSocket,
     makeLogger: MakeLogger = makeNullLogger
 ): Observable<WampChannel> =>
-    concat(
-        connectWebSocket(url, 'wamp.2.json'),
-        throwError(new Error('websocket disconnected'))
-    ).pipe(
+    connectWebSocket(url, 'wamp.2.json').pipe(
         map(ws => createWampChannelFromWs(ws, makeLogger)),
         switchMap(channel => channel.logon(realm, auth).then(_ => channel)),
         map(({logon, ...channel}): WampChannel => channel)
