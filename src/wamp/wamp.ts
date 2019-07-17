@@ -89,7 +89,8 @@ enum WampMessageEnum {
 
 interface HelloMsgDetails {
     roles: {
-        caller?: { features?: { progressive_call_results?: boolean, call_canceling?: boolean }}
+        caller?: { features?: { progressive_call_results?: boolean, call_canceling?: boolean }},
+        subscriber?: {}
     },
     authmethods?: string[],
     authid?: string
@@ -163,9 +164,10 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
 
     // Logon
     const logon = async (realm: string, auth?: LoginAuth): Promise<void> => {
-        let helloDetails: HelloMsgDetails = { roles:
-            { caller: { features: { progressive_call_results: true, call_canceling: true }}}
-        };
+        let helloDetails: HelloMsgDetails = { roles: {
+            caller: { features: { progressive_call_results: true, call_canceling: true }},
+            subscriber: {}
+        }};
         if (auth) {
             helloDetails = {
                 ...helloDetails,

@@ -38,7 +38,11 @@ describe('wamp', () => {
             await handleQueuedEvents();
 
             expect(mockWebSocket.send).toHaveBeenCalledTimes(1);
-            expect(mockWebSocket.send).toHaveBeenCalledWith('[1,"fakeRealm",{"roles":{"caller":{"features":{"progressive_call_results":true,"call_canceling":true}}}}]');
+            expect(mockWebSocket.send).toHaveBeenCalledWith(
+                '[1,"fakeRealm",{"roles":{' +
+                '"caller":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
+                '"subscriber":{}' +
+                '}}]');
             expect(channel).toBeFalsy();
 
             // Receive welcome
@@ -94,7 +98,10 @@ describe('wamp', () => {
 
             expect(mockWebSocket.send).toHaveBeenCalledTimes(1);
             expect(mockWebSocket.send).toHaveBeenCalledWith(
-                '[1,"fakeRealm",{"roles":{"caller":{"features":{"progressive_call_results":true,"call_canceling":true}}},' +
+                '[1,"fakeRealm",{"roles":{' +
+                    '"caller":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
+                    '"subscriber":{}' +
+                '},' +
                 '"authid":"myId","authmethods":["ticket"]}]'
             );
             expect(channel).toBeFalsy();
