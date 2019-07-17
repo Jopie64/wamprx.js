@@ -100,6 +100,8 @@ interface SubscribeMsgDetails {}
 interface EventMsgDetails {}
 interface CancelMsgOptions { mode: 'skip' | 'kill' | 'killnowait' }
 
+// See the WAMP RFC for the meaning of all these messages
+// https://wamp-proto.org/_static/gen/wamp_latest.html
 type WampHelloMsg = [WampMessageEnum.HELLO, string, HelloMsgDetails];
 type WampChallengeMsg = [WampMessageEnum.CHALLENGE, string, Dict];
 type WampAbortMsg = [WampMessageEnum.ABORT, Dict, string];
