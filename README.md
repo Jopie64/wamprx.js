@@ -11,7 +11,7 @@ It heavily relies on [RxJS](https://www.learnrxjs.io/).
 ```typescript
 connectWampChannel('http://my.wamp.url/ws', 'realm1').pipe(
     switchMap(channel => channel.call('add', [1, 2])))
-    .subscribe(answer => answer !== 3
+    .subscribe(([[answer]]) => answer !== 3
         ? console.error(`${answer} is the wrong answer!`)
         : console.log('Answer 3 is correct'));
 ```
@@ -21,7 +21,7 @@ Or imperatively:
 ```typescript
 const channel = await connectWampChannel('http://my.wamp.url/ws', 'realm1').toPromise();
 
-const answer = await channel.call('add', [1, 2]).toPromise();
+const [[answer]] = await channel.call('add', [1, 2]).toPromise();
 
 if (answer !== 3) {
     console.error(`${answer} is the wrong answer!`);
@@ -31,6 +31,15 @@ if (answer !== 3) {
 ```
 
 Or any combination of it.
+
+Note the strange looking `[[answer]]`. This is actually [destructuring](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment) the WAMP response which is of type `ArgsAndDict`. ArgsAndDict is a tuple of an array (`Args`) and a dictionary (object) (`Dict`), which in WAMP is the usual way to pass arguments or return values. `[[answer]]` is hence selecting the first argument of the `Args`.
+
+If you can't (or don't want to) use destructuring for some reason, you can achieve the same result like this:
+
+```typescript
+const argsAndDict = await channel.call('add', [1, 2]).toPromise();
+const answer = argsAndDict[0][0]; // First [0] selecting args, second for selecting first arg
+```
 
 ## With authentication
 
