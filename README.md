@@ -2,9 +2,11 @@
 
 Simple [WAMP](https://wamp-proto.org) (WebSocket Application Messaging Protocol) TypeScript client-side implementation (of course also usable in JavaScript).
 
-It heavily relies on [RxJS](https://www.learnrxjs.io/), which is for now it's only dependency.
+It heavily relies on [RxJS](https://www.learnrxjs.io/).
 
-# Simple usage example
+# Usage examples
+
+## Creating a channel and call an RPC
 
 ```typescript
 connectWampChannel('http://my.wamp.url/ws', 'realm1').pipe(
@@ -29,6 +31,17 @@ if (answer !== 3) {
 ```
 
 Or any combination of it.
+
+## With authentication
+
+```typescript
+const auth = {
+    authid: 'myId',
+    authmethods: ['ticket'],
+    challenge: (method, extra) => 'some ticket'
+};
+const channel = await connectWampChannel('http://my.wamp.url/ws', 'realm1', auth).toPromise();
+```
 
 
 # WAMP features support
