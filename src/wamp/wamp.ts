@@ -2,13 +2,27 @@ import { Observable, of, merge, throwError, defer } from 'rxjs';
 import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
-// Minimal WebSocket interface needed for this WAMP implementation
+// Minimal WebSocket abstraction interface needed for this WAMP implementation
 export interface WampWebSocket {
     send: (data: string) => void;
     receive$: Observable<string>;
 };
 
-export type ConnectWebSocket = (url: string, protocol: string) => Observable<WampWebSocket>;
+export interface IMessageEvent { data: any; }
+
+// Minimal WebSocket interface needed for makeObservableWebSocket()
+// It fits the WebSocket type from the browser and from the ws lib.
+export interface IWebSocket {
+    onclose: ((...args: any[]) => any) | null;
+    onerror: ((e: any) => any) | null;
+    onmessage: ((ev: any) => any) | null; // ev must at least fit interface IMessageEvent
+    onopen: ((...args: any[]) => any) | null;
+    close(): void;
+    send(data: string): void;
+}
+
+export type MakeWebSocket = (url: string, protocol: string) => IWebSocket;
+export type MakeObservableWebSocket = (url: string, protocol: string) => Observable<WampWebSocket>;
 
 export type Args = any[];
 export type Dict = {[key: string]: any};
@@ -27,12 +41,12 @@ export interface WampChannel {
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
 
-export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
-    const webSocket$ = new Observable<WebSocket>(newChannelObserver => {
-        const ws = new WebSocket(url, protocol);
+export const makeObservableWebSocket = (makeWebSocket: MakeWebSocket): MakeObservableWebSocket => (url, protocol) => {
+    const webSocket$ = new Observable<IWebSocket>(newChannelObserver => {
+        const ws = makeWebSocket(url, protocol);
         ws.onopen = () => newChannelObserver.next(ws);
         ws.onclose = () => newChannelObserver.error(new Error('Websocket disconnected'));
-        ws.onerror = e => newChannelObserver.error(e);
+        ws.onerror = e => newChannelObserver.error(e.error);
         return () => {
             try {
                 ws.close();
@@ -45,7 +59,7 @@ export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
 
     const receive$ = webSocket$.pipe(
         switchMap(ws => new Observable<string>(msgObserver => {
-            const onMsg = (ev: MessageEvent) => msgObserver.next(ev.data);
+            const onMsg = (ev: IMessageEvent) => msgObserver.next(ev.data);
             ws.onmessage = onMsg;
             return () => {
                 if (ws.onmessage === onMsg) {
@@ -57,6 +71,8 @@ export const defaultConnectWebSocket: ConnectWebSocket = (url, protocol) => {
     return webSocket$.pipe(
         map(ws => ({ send: data => ws.send(data), receive$ })));
 };
+
+const defaultMakeObservableWebSocket = makeObservableWebSocket((url, protocol) => new WebSocket(url, protocol));
 
 export type MakeLogger = (hdr: string) => ILogger;
 
@@ -288,10 +304,10 @@ export const makeConsoleLogger: MakeLogger = hdr => ({
 
 export const connectWampChannel = (
     url: string, realm: string, auth?: LoginAuth,
-    connectWebSocket: ConnectWebSocket = defaultConnectWebSocket,
+    makeObservableWebSocket: MakeObservableWebSocket = defaultMakeObservableWebSocket,
     makeLogger: MakeLogger = makeNullLogger
 ): Observable<WampChannel> =>
-    connectWebSocket(url, 'wamp.2.json').pipe(
+    makeObservableWebSocket(url, 'wamp.2.json').pipe(
         map(ws => createWampChannelFromWs(ws, makeLogger)),
         switchMap(channel => channel.logon(realm, auth).then(_ => channel)),
         map(({logon, ...channel}): WampChannel => channel)

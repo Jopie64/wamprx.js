@@ -9,7 +9,7 @@ It heavily relies on [RxJS](https://www.learnrxjs.io/).
 ## Creating a channel and call an RPC
 
 ```typescript
-connectWampChannel('http://my.wamp.url/ws', 'realm1').pipe(
+connectWampChannel('ws://my.wamp.url/ws', 'realm1').pipe(
     switchMap(channel => channel.call('add', [1, 2])))
     .subscribe(([[answer]]) => answer !== 3
         ? console.error(`${answer} is the wrong answer!`)
@@ -19,7 +19,7 @@ connectWampChannel('http://my.wamp.url/ws', 'realm1').pipe(
 Or imperatively:
 
 ```typescript
-const channel = await connectWampChannel('http://my.wamp.url/ws', 'realm1').toPromise();
+const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1').toPromise();
 
 const [[answer]] = await channel.call('add', [1, 2]).toPromise();
 
@@ -49,9 +49,22 @@ const auth = {
     authmethods: ['ticket'],
     challenge: (method, extra) => 'some ticket'
 };
-const channel = await connectWampChannel('http://my.wamp.url/ws', 'realm1', auth).toPromise();
+const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1', auth).toPromise();
 ```
 
+## Using it in node.js
+
+Because the library is primarily used in the browser, it defaults to using the browsers `WebSocket` implementation.
+You can however use it in node.js too like this:
+
+```typescript
+import * as WebSocket from 'ws';
+//...
+const useWs = makeObservableWebSocket(
+    (url, protocol) => new WebSocket(url, protocol));
+
+const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1', undefined, useWs).toPromise();
+```
 
 # WAMP features support
 
@@ -67,3 +80,5 @@ interface WampChannel {
 Note that for all RPC calls, it uses the `receive_progress=true` option. Also, the `Observable<ArgsAndDict>` returned by `call` is cold. Hence the method is called only once it is subscribed, and it is called twice (with the same arguments) when it is subscribed twice.
 
 When you don't want that, simply turn it into a promise via `.toPromise()`.
+
+Also currently the only serialization method supported is JSON (`wamp.2.json`).
