@@ -73,6 +73,7 @@ It for now only supports a subset of the total featureset. The interface definit
 ```typescript
 interface WampChannel {
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
+    publish(uri: string, args?: Args, dict?: Dict): Promise<number>;
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
 ```

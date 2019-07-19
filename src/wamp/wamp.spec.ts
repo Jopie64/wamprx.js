@@ -41,7 +41,8 @@ describe('wamp', () => {
             expect(mockWebSocket.send).toHaveBeenCalledWith(
                 '[1,"fakeRealm",{"roles":{' +
                 '"caller":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
-                '"subscriber":{}' +
+                '"subscriber":{},' +
+                '"publisher":{}' +
                 '}}]');
             expect(channel).toBeFalsy();
 
@@ -100,7 +101,8 @@ describe('wamp', () => {
             expect(mockWebSocket.send).toHaveBeenCalledWith(
                 '[1,"fakeRealm",{"roles":{' +
                     '"caller":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
-                    '"subscriber":{}' +
+                    '"subscriber":{},' +
+                    '"publisher":{}' +
                 '},' +
                 '"authid":"myId","authmethods":["ticket"]}]'
             );
@@ -234,6 +236,35 @@ describe('wamp', () => {
 
             expect(result1).toEqual([[['I hear you!']], [["end1"]]]);
             expect(result2).toEqual([[['I hear you', 'too!']], [["end2"]]]);
+        });
+    });
+
+    describe('publication', () => {
+        it('publishes an event', async () => {
+            const { channel, mockWebSocket } = await prepareWampChannel();
+            channel.publish('some.topic', ['hello', 'event']);
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(1);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[16,101,{"acknowledge":true},"some.topic",["hello","event"]]');
+        });
+
+        it('waits for publication', async () => {
+            const { channel, receive$ } = await prepareWampChannel();
+            let pubId = 0;
+            channel.publish('some.topic', ['hello', 'event']).then(it => pubId = it);
+            expect(pubId).toEqual(0);
+            receive$.next('[17,101,1234]'); // PubId is 1234
+            await Promise.resolve();
+            expect(pubId).toEqual(1234);
+        });
+
+        it('aborts on publish rejection', async () => {
+            const { channel, receive$ } = await prepareWampChannel();
+            let error: any;
+            channel.publish('some.topic', ['hello', 'event']).catch(e => error = e);
+            expect(error).toBeUndefined();
+            receive$.next('[8,16,101,{},"wamp.big.failure"]');
+            await Promise.resolve();
+            expect(error).toEqual([{}, 'wamp.big.failure']);
         });
     });
 });

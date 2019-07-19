@@ -38,6 +38,7 @@ export interface LoginAuth {
 
 export interface WampChannel {
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
+    publish(uri: string, args?: Args, dict?: Dict): Promise<number>;
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
 
@@ -106,7 +107,8 @@ enum WampMessageEnum {
 interface HelloMsgDetails {
     roles: {
         caller?: { features?: { progressive_call_results?: boolean, call_canceling?: boolean }},
-        subscriber?: {}
+        subscriber?: {},
+        publisher?: {}
     },
     authmethods?: string[],
     authid?: string
@@ -115,6 +117,7 @@ interface CallMsgOptions { receive_progress?: boolean }
 interface ResultMsgDetails { progress?: boolean }
 interface SubscribeMsgDetails {}
 interface EventMsgDetails {}
+interface PublishMsgDetails { acknowledge?: boolean }
 interface CancelMsgOptions { mode: 'skip' | 'kill' | 'killnowait' }
 
 // See the WAMP RFC for the meaning of all these messages
@@ -133,12 +136,15 @@ type WampSubscribedMsg = [WampMessageEnum.SUBSCRIBED, number, number];
 type WampUnsubscribeMsg = [WampMessageEnum.UNSUBSCRIBE, number, number];
 type WampUnsubscribedMsg = [WampMessageEnum.UNSUBSCRIBED, number];
 type WampEventMsg = [WampMessageEnum.EVENT, number, number, EventMsgDetails, Args?, Dict?];
+type WampPublishMsg = [WampMessageEnum.PUBLISH, number, PublishMsgDetails, string, Args?, Dict?];
+type WampPublishedMsg = [WampMessageEnum.PUBLISHED, number, number];
 
 type WampMessage =
     WampHelloMsg | WampChallengeMsg | WampAuthenticateMsg | WampWelcomeMsg | WampAbortMsg |
     WampErrorMsg |
     WampCallMsg | WampResultMsg | WampCancelMsg |
-    WampSubscribeMsg | WampSubscribedMsg | WampUnsubscribeMsg | WampUnsubscribedMsg | WampEventMsg;
+    WampSubscribeMsg | WampSubscribedMsg | WampUnsubscribeMsg | WampUnsubscribedMsg | WampEventMsg |
+    WampPublishMsg | WampPublishedMsg;
 
 const trimArray = (a: any[]): any[] => {
     while (a.length > 0 && a[a.length - 1] === undefined) {
@@ -182,7 +188,8 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     const logon = async (realm: string, auth?: LoginAuth): Promise<void> => {
         let helloDetails: HelloMsgDetails = { roles: {
             caller: { features: { progressive_call_results: true, call_canceling: true }},
-            subscriber: {}
+            subscriber: {},
+            publisher: {}
         }};
         if (auth) {
             helloDetails = {
@@ -259,7 +266,22 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
         map(([,,, ...args]) => args),
         logObs(`call ${uri}`));
 
-    // PubSub
+    // *** PubSub
+
+    // publish
+    const published$ = divide(([, reqId]: WampPublishedMsg) => reqId, receive$<WampPublishedMsg>(WampMessageEnum.PUBLISHED));
+    
+    const publish = (uri: string, args?: Args, dict?: Dict) => {
+        const reqId = ++nextReqId;
+        send([WampMessageEnum.PUBLISH, reqId, { acknowledge: true}, uri, args, dict]);
+        return merge(
+            published$(reqId).pipe(
+                map(([,,publicationId]) => publicationId)),
+            throwWhenError$(reqId)
+        ).pipe(take(1)).toPromise();
+    }
+
+    // subscribe
     const subscribed$ = divide(([, reqId]: WampSubscribedMsg) => reqId, receive$<WampSubscribedMsg>(WampMessageEnum.SUBSCRIBED));
     const event$      = divide(([, subsId]: WampEventMsg) => subsId, receive$<WampEventMsg>(WampMessageEnum.EVENT));
 
@@ -283,6 +305,7 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     return {
         logon,
         call,
+        publish,
         subscribe
     };
 };
