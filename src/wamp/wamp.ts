@@ -1,5 +1,5 @@
-import { Observable, of, merge, throwError, defer } from 'rxjs';
-import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap } from 'rxjs/operators';
+import { Observable, of, merge, throwError, defer, Subscription } from 'rxjs';
+import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap, tap, startWith } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket abstraction interface needed for this WAMP implementation
@@ -36,8 +36,11 @@ export interface LoginAuth {
     challenge: (method: string, extra: Dict) => ChallengeResponse;
 }
 
+export type RegisteredFunc = (args?: Args, dict?: Dict) => Observable<ArgsAndDict>;
+
 export interface WampChannel {
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
+    register(uri: string, func: RegisteredFunc): Promise<Subscription>;
     publish(uri: string, args?: Args, dict?: Dict): Promise<number>;
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
@@ -107,6 +110,7 @@ enum WampMessageEnum {
 interface HelloMsgDetails {
     roles: {
         caller?: { features?: { progressive_call_results?: boolean, call_canceling?: boolean }},
+        callee?: { features?: { progressive_call_results?: boolean, call_canceling?: boolean }},
         subscriber?: {},
         publisher?: {}
     },
@@ -119,30 +123,53 @@ interface SubscribeMsgDetails {}
 interface EventMsgDetails {}
 interface PublishMsgDetails { acknowledge?: boolean }
 interface CancelMsgOptions { mode: 'skip' | 'kill' | 'killnowait' }
+interface RegisterMsgOptions {}
+interface InvocationMsgDetails { receive_progress?: boolean }
+interface YieldMsgOptions { progress?: boolean }
 
 // See the WAMP RFC for the meaning of all these messages
 // https://wamp-proto.org/_static/gen/wamp_latest.html
+
+// General
+type WampErrorMsg = [WampMessageEnum.ERROR, WampMessageEnum, number, Dict, string, Args?, Dict?];
+
+// Logon
 type WampHelloMsg = [WampMessageEnum.HELLO, string, HelloMsgDetails];
 type WampChallengeMsg = [WampMessageEnum.CHALLENGE, string, Dict];
 type WampAbortMsg = [WampMessageEnum.ABORT, Dict, string];
 type WampAuthenticateMsg = [WampMessageEnum.AUTHENTICATE, string, Dict];
 type WampWelcomeMsg = [WampMessageEnum.WELCOME, number, Dict];
-type WampErrorMsg = [WampMessageEnum.ERROR, WampMessageEnum, number, Dict, string, Args?, Dict?];
+
+// RPC caller
 type WampCallMsg = [WampMessageEnum.CALL, number, CallMsgOptions, string, Args?, Dict?];
 type WampResultMsg = [WampMessageEnum.RESULT, number, ResultMsgDetails, Args?, Dict?];
 type WampCancelMsg = [WampMessageEnum.CANCEL, number, CancelMsgOptions];
+
+// RPC callee
+type WampRegisterMsg = [WampMessageEnum.REGISTER, number, RegisterMsgOptions, string];
+type WampRegisteredMsg = [WampMessageEnum.REGISTERED, number, number];
+type WampUnregisterMsg = [WampMessageEnum.UNREGISTER, number, number];
+type WampUnregisteredMsg = [WampMessageEnum.UNREGISTERED, number];
+type WampInvocationMsg = [WampMessageEnum.INVOCATION, number, number, InvocationMsgDetails, Args?, Dict?];
+type WampYieldMsg = [WampMessageEnum.YIELD, number, YieldMsgOptions, Args?, Dict?];
+
+// Pubsub publisher
+type WampPublishMsg = [WampMessageEnum.PUBLISH, number, PublishMsgDetails, string, Args?, Dict?];
+type WampPublishedMsg = [WampMessageEnum.PUBLISHED, number, number];
+
+// Pubsub subscriber
 type WampSubscribeMsg = [WampMessageEnum.SUBSCRIBE, number, SubscribeMsgDetails, string];
 type WampSubscribedMsg = [WampMessageEnum.SUBSCRIBED, number, number];
 type WampUnsubscribeMsg = [WampMessageEnum.UNSUBSCRIBE, number, number];
 type WampUnsubscribedMsg = [WampMessageEnum.UNSUBSCRIBED, number];
 type WampEventMsg = [WampMessageEnum.EVENT, number, number, EventMsgDetails, Args?, Dict?];
-type WampPublishMsg = [WampMessageEnum.PUBLISH, number, PublishMsgDetails, string, Args?, Dict?];
-type WampPublishedMsg = [WampMessageEnum.PUBLISHED, number, number];
 
 type WampMessage =
     WampHelloMsg | WampChallengeMsg | WampAuthenticateMsg | WampWelcomeMsg | WampAbortMsg |
     WampErrorMsg |
     WampCallMsg | WampResultMsg | WampCancelMsg |
+    WampRegisterMsg | WampRegisteredMsg | WampUnregisterMsg | WampUnregisteredMsg |
+    WampInvocationMsg | WampYieldMsg |
     WampSubscribeMsg | WampSubscribedMsg | WampUnsubscribeMsg | WampUnsubscribedMsg | WampEventMsg |
     WampPublishMsg | WampPublishedMsg;
 
@@ -188,6 +215,7 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     const logon = async (realm: string, auth?: LoginAuth): Promise<void> => {
         let helloDetails: HelloMsgDetails = { roles: {
             caller: { features: { progressive_call_results: true, call_canceling: true }},
+            callee: { features: { progressive_call_results: true, call_canceling: true }},
             subscriber: {},
             publisher: {}
         }};
@@ -234,7 +262,8 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     const throwWhenError$ = (reqId: number) => error$(reqId).pipe(
         switchMap(([,,, ...e]) => throwError(e)));
 
-    // RPC
+    // *** RPC
+    // Caller
     const result$ = divide(([, reqId]: WampResultMsg) => reqId, receive$<WampResultMsg>(WampMessageEnum.RESULT));
 
     const call = (uri: string, args?: Args, dict?: Dict) => defer(() => {
@@ -265,6 +294,70 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
         ),
         map(([,,, ...args]) => args),
         logObs(`call ${uri}`));
+
+    // Callee
+    const registered$ = divide(([, reqId]: WampRegisteredMsg) => reqId, receive$<WampRegisteredMsg>(WampMessageEnum.REGISTERED));
+    const unregistered$ = divide(([, reqId]: WampUnregisteredMsg) => reqId, receive$<WampUnregisteredMsg>(WampMessageEnum.UNREGISTERED));
+    const invocation$ = divide(([,,registrationId]: WampInvocationMsg) => registrationId, receive$<WampInvocationMsg>(WampMessageEnum.INVOCATION));
+
+    const register = async (uri: string, func: RegisteredFunc) => {
+        const registerReqId = ++nextReqId;
+        send([WampMessageEnum.REGISTER, registerReqId, { receive_progress: true }, uri]);
+
+        const registrationId = await merge(
+            registered$(registerReqId).pipe(
+                map(([,,registrationId]) => registrationId)),
+            throwWhenError$(registerReqId)
+        ).pipe(take(1)).toPromise();
+
+        // Subscription to return
+        const subs = new Subscription();
+
+        subs.add(invocation$(registrationId)
+            .pipe(logObs(`invocation ${registrationId}: ${uri}`))
+            .subscribe(([,invocationReqId,, details, args, dict]) => {
+                // Handle an invocation
+                const sendError = (error: any) => send([WampMessageEnum.ERROR, WampMessageEnum.INVOCATION, invocationReqId,
+                    {}, error.uri || 'wamp.error', [error.message || {error}]]);
+                const funcRsp$ = func(args, dict).pipe(
+                    logObs(`invocation rsp ${initialReqId}`));
+                if (details.receive_progress) {
+                    funcRsp$.subscribe(
+                        // Next has payload
+                        ([rspArgs, rspDict]) =>
+                            send([WampMessageEnum.YIELD, invocationReqId, { progress: true }, rspArgs, rspDict]),
+                        sendError,
+                        // Final result doesn't have payload
+                        () => send([WampMessageEnum.YIELD, invocationReqId, {}])
+                    );
+                } else {
+                    // Does not expect progressive result, so just send final result or an empty
+                    // payload when no payload was emitted.
+                    funcRsp$.pipe(
+                        startWith([]))
+                        .toPromise()
+                        .then(([rspArgs, rspDict]) =>
+                            send([WampMessageEnum.YIELD, invocationReqId, { }, rspArgs, rspDict]))
+                        .catch(sendError);
+                }
+            }));
+
+        // On unsubscribe, send an UNREGISTER message.
+        subs.add(new Subscription(async () => {
+            const unregisterReqId = ++nextReqId;
+            send([WampMessageEnum.UNREGISTER, unregisterReqId, registrationId]);
+            // Although we're not interested in whether deregistration succeeded,
+            // lets still wait for the response, so it won't be some unexpected msg
+            // we receive.
+            await merge(
+                    unregistered$(unregisterReqId).pipe(take(1)),
+                    throwWhenError$(unregisterReqId)
+                ).toPromise()
+                // Make sure fire and forget exception doesn't fall through
+                .catch(_ => {});
+        }));
+        return subs;
+    };
 
     // *** PubSub
 
@@ -305,6 +398,7 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     return {
         logon,
         call,
+        register,
         publish,
         subscribe
     };

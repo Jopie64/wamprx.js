@@ -68,18 +68,29 @@ const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1', undefi
 
 # WAMP features support
 
-It for now only supports a subset of the total featureset. The interface definition should say it all:
+See following interface for what is supported:
 
 ```typescript
 interface WampChannel {
     call(uri: string, args?: Args, dict?: Dict): Observable<ArgsAndDict>;
+    register(uri: string, func: RegisteredFunc): Promise<Subscription>;
     publish(uri: string, args?: Args, dict?: Dict): Promise<number>;
     subscribe(uri: string): Observable<ArgsAndDict>;
 }
 ```
 
-Note that for all RPC calls, it uses the `receive_progress=true` option. Also, the `Observable<ArgsAndDict>` returned by `call` is cold. Hence the method is called only once it is subscribed, and it is called twice (with the same arguments) when it is subscribed twice.
+## Serialization
+
+Currently the only serialization method supported is JSON (`wamp.2.json`).
+
+## RPC caller
+
+For all RPC calls, it uses the `receive_progress=true` option. Also, the `Observable<ArgsAndDict>` returned by `call` is cold. Hence the method is called only once it is subscribed, and it is called twice (with the same arguments) when it is subscribed twice.
 
 When you don't want that, simply turn it into a promise via `.toPromise()`.
 
-Also currently the only serialization method supported is JSON (`wamp.2.json`).
+## RPC callee
+
+When a registered function is called with option `receive_progress=true`, all payload is sent to the caller with option `progress=true`. When the returned observable emits complete, it will emit the final result without `progress=true` and without any payload.
+
+When a registered function is called *without* option `receive_progress=true`, it will only send the *last emitted payload* to the caller when the returned observable completes, (or no payload when it completes without emitting any payload). This is the behavior as if .toPromise() was called on the observable.

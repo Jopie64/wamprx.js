@@ -1,5 +1,6 @@
-import { Observable, Subject, of, concat, never } from 'rxjs';
-import { WampWebSocket, connectWampChannel, WampChannel, createWampChannelFromWs, makeNullLogger, LoginAuth } from './wamp';
+import { Observable, Subject, of, concat, never, empty, Subscription } from 'rxjs';
+import { WampWebSocket, connectWampChannel, WampChannel, createWampChannelFromWs,
+    makeNullLogger, LoginAuth, ArgsAndDict, makeConsoleLogger } from './wamp';
 import { toArray } from 'rxjs/operators';
 
 describe('wamp', () => {
@@ -18,6 +19,8 @@ describe('wamp', () => {
         const mockWebSocket = makeMockWebSocket(receive$);
         spyOn(mockWebSocket, 'send');
         const channel = createWampChannelFromWs(mockWebSocket, makeNullLogger, 100);
+        // Uncomment this to enable logging
+        // const channel = createWampChannelFromWs(mockWebSocket, makeConsoleLogger, 100);
 
         return { channel, mockWebSocket, receive$ };
     }
@@ -41,6 +44,7 @@ describe('wamp', () => {
             expect(mockWebSocket.send).toHaveBeenCalledWith(
                 '[1,"fakeRealm",{"roles":{' +
                 '"caller":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
+                '"callee":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
                 '"subscriber":{},' +
                 '"publisher":{}' +
                 '}}]');
@@ -101,6 +105,7 @@ describe('wamp', () => {
             expect(mockWebSocket.send).toHaveBeenCalledWith(
                 '[1,"fakeRealm",{"roles":{' +
                     '"caller":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
+                    '"callee":{"features":{"progressive_call_results":true,"call_canceling":true}},' +
                     '"subscriber":{},' +
                     '"publisher":{}' +
                 '},' +
@@ -125,7 +130,7 @@ describe('wamp', () => {
         });
     });
 
-    describe("RPC", () => {
+    describe("RPC caller", () => {
 
         it('works with simple call-response', async () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
@@ -236,6 +241,140 @@ describe('wamp', () => {
 
             expect(result1).toEqual([[['I hear you!']], [["end1"]]]);
             expect(result2).toEqual([[['I hear you', 'too!']], [["end2"]]]);
+        });
+    });
+
+    describe("RPC callee", () => {
+        it('registers a function', async () => {
+            const { channel, mockWebSocket } = await prepareWampChannel();
+            channel.register('my.function', () => empty());
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(1);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[64,101,{"receive_progress":true},"my.function"]');
+        });
+
+        it('succeeds at registering a function', async () => {
+            const { channel, receive$ } = await prepareWampChannel();
+            let subs: any;
+            channel.register('my.function', () => empty()).then(it => subs = it);
+            await Promise.resolve();
+            expect(subs).toBeUndefined();
+            receive$.next('[65,101,123]');
+            await Promise.resolve();
+            expect(subs).toEqual(jasmine.any(Subscription));
+        });
+
+        it('fails at registering a function', async () => {
+            const { channel, receive$ } = await prepareWampChannel();
+            let error: any;
+            channel.register('my.function', () => empty()).catch(it => error = it);
+            await Promise.resolve();
+            expect(error).toBeUndefined();
+            receive$.next('[8,64,101,{},"wamp.error.procedure_already_exists"]');
+            await Promise.resolve();
+            expect(error).toEqual([{}, 'wamp.error.procedure_already_exists']);
+        });
+
+        it('handles a progressive function call', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+            const funcRsp$ = new Subject<ArgsAndDict>();
+            const funcs = {
+                func1: () => funcRsp$
+            };
+            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+
+            channel.register('my.function1', funcs.func1);
+            receive$.next('[65,101,123]'); // Func registered
+            await Promise.resolve();
+
+            // Call the function
+            receive$.next('[68,1000,123,{"receive_progress": true},[123, "abc"],{"some": "data"}]');
+            expect(funcs.func1).toHaveBeenCalledWith([123, 'abc'], {some: 'data'});
+
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(1); // Only for registering...
+
+            // Send a response
+            funcRsp$.next([['answer', 456], {dictAnswer: 789}]);
+            funcRsp$.next([[2]]);
+            funcRsp$.complete();
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(4);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[70,1000,{"progress":true},["answer",456],{"dictAnswer":789}]');
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[70,1000,{"progress":true},[2]]');
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[70,1000,{}]');
+        });
+
+        it('handles a non-progressive function call', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+            const funcRsp$ = new Subject<ArgsAndDict>();
+            const funcs = {
+                func1: () => funcRsp$
+            };
+            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+
+            channel.register('my.function1', funcs.func1);
+            receive$.next('[65,101,123]'); // Func registered
+            await Promise.resolve();
+
+            // Call the function non-progress
+            receive$.next('[68,1000,123,{},["arg"]]');
+            expect(funcs.func1).toHaveBeenCalledWith(['arg'], undefined);
+
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(1); // Only for registering...
+
+            // Send a response
+            funcRsp$.next([['not received']]);
+            funcRsp$.next([['actual received value']]);
+            funcRsp$.complete();
+            await Promise.resolve();
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(2);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[70,1000,{},["actual received value"]]');
+        });
+
+        it('handles a non-progressive function call which emits nothing', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+            const funcRsp$ = new Subject<ArgsAndDict>();
+            const funcs = {
+                func1: () => funcRsp$
+            };
+            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+
+            channel.register('my.function1', funcs.func1);
+            receive$.next('[65,101,123]'); // Func registered
+            await Promise.resolve();
+
+            // Call the function non-progress
+            receive$.next('[68,1000,123,{},["arg"]]');
+            expect(funcs.func1).toHaveBeenCalledWith(['arg'], undefined);
+
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(1); // Only for registering...
+
+            // Complete without emitting any payload
+            funcRsp$.complete();
+            await Promise.resolve();
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(2);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[70,1000,{}]');
+        });
+
+        it('unregisters a function', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+            const funcRsp$ = new Subject<ArgsAndDict>();
+            const funcs = {
+                func1: () => funcRsp$
+            };
+            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+
+            const registrationPromise = channel.register('my.function1', funcs.func1);
+            receive$.next('[65,101,123]'); // Func registered
+            await Promise.resolve();
+
+            const registration = await registrationPromise;
+            // function is unregistered
+            registration.unsubscribe();
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(2);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[66,102,123]');
+
+            // func1 is not called anymore cause it is unregistered
+            receive$.next('[68,1000,123,{},["arg"]]');
+            expect(funcs.func1).toHaveBeenCalledTimes(0);
         });
     });
 
