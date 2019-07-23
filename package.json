@@ -1,6 +1,6 @@
 {
   "name": "wamprx",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Simple WAMP client library heavily relying on rxjs and TypeScript",
   "main": "dist/index.js",
   "scripts": {
