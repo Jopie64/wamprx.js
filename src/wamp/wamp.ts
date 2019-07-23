@@ -181,13 +181,9 @@ const trimArray = (a: any[]): any[] => {
     return a;
 }
 
-interface WampChannelWithLogon extends WampChannel {
-    logon(realm: string, auth?: LoginAuth): Promise<void>;
-}
-
 let nextIdChannel = 0;
 
-export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogger, initialReqId?: number): WampChannelWithLogon => {
+export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, auth?: LoginAuth, makeLogger: MakeLogger = makeNullLogger, initialReqId?: number): Promise<WampChannel> => {
     const idChannel = ++nextIdChannel;
     const logger = makeLogger(`${idChannel}/`);
     const logObs = <T>(hdr: string) => logSubUnsub<T>(makeLogger(`${idChannel}/${hdr}`), true);
@@ -213,47 +209,45 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     };
 
     // Logon
-    const logon = async (realm: string, auth?: LoginAuth): Promise<void> => {
-        let helloDetails: HelloMsgDetails = { roles: {
-            caller: { features: { progressive_call_results: true, call_canceling: true }},
-            callee: { features: { progressive_call_results: true, call_canceling: true }},
-            subscriber: {},
-            publisher: {}
-        }};
-        if (auth) {
-            helloDetails = {
-                ...helloDetails,
-                authid: auth.authid,
-                authmethods: auth.authmethods
-            };
+    let helloDetails: HelloMsgDetails = { roles: {
+        caller: { features: { progressive_call_results: true, call_canceling: true }},
+        callee: { features: { progressive_call_results: true, call_canceling: true }},
+        subscriber: {},
+        publisher: {}
+    }};
+    if (auth) {
+        helloDetails = {
+            ...helloDetails,
+            authid: auth.authid,
+            authmethods: auth.authmethods
+        };
+    }
+    send([WampMessageEnum.HELLO, realm, helloDetails]);
+    const welcomeOrChallenge$ = merge(
+        receive$<WampWelcomeMsg>(WampMessageEnum.WELCOME),
+        receive$<WampChallengeMsg>(WampMessageEnum.CHALLENGE),
+        receive$<WampAbortMsg>(WampMessageEnum.ABORT)
+            .pipe(flatMap(([, ...error]) => throwError(error)))
+    ).pipe(take(1));
+    while(true) {
+        const welcomeOrChallenge = await welcomeOrChallenge$.toPromise();
+        if (welcomeOrChallenge[0] === WampMessageEnum.WELCOME) {
+            break;
         }
-        send([WampMessageEnum.HELLO, realm, helloDetails]);
-        const welcomeOrChallenge$ = merge(
-            receive$<WampWelcomeMsg>(WampMessageEnum.WELCOME),
-            receive$<WampChallengeMsg>(WampMessageEnum.CHALLENGE),
-            receive$<WampAbortMsg>(WampMessageEnum.ABORT)
-                .pipe(flatMap(([, ...error]) => throwError(error)))
-        ).pipe(take(1));
-        while(true) {
-            const welcomeOrChallenge = await welcomeOrChallenge$.toPromise();
-            if (welcomeOrChallenge[0] === WampMessageEnum.WELCOME) {
-                return;
-            }
-            if (!auth) {
-                throw new Error('Received unexpected challenge');
-            }
-            const [, method, extra ] = welcomeOrChallenge;
-            const sig = auth.challenge(method, extra);
-            if (Array.isArray(sig)) {
-                const msg = [WampMessageEnum.AUTHENTICATE, ...sig];
-                // Expected type of msg should be [WampMessageEnum.AUTHENTICATE, string, Dict]
-                // which is the signature of WampAuthenticateMsg.
-                // But current version of TypeScript makes it (string | WampMessageEnum | Dict)[]
-                // Hence we need a cast here :(
-                send(msg as WampAuthenticateMsg);
-            } else {
-                send([WampMessageEnum.AUTHENTICATE, sig, {}]);
-            }
+        if (!auth) {
+            throw new Error('Received unexpected challenge');
+        }
+        const [, method, extra ] = welcomeOrChallenge;
+        const sig = auth.challenge(method, extra);
+        if (Array.isArray(sig)) {
+            const msg = [WampMessageEnum.AUTHENTICATE, ...sig];
+            // Expected type of msg should be [WampMessageEnum.AUTHENTICATE, string, Dict]
+            // which is the signature of WampAuthenticateMsg.
+            // But current version of TypeScript makes it (string | WampMessageEnum | Dict)[]
+            // Hence we need a cast here :(
+            send(msg as WampAuthenticateMsg);
+        } else {
+            send([WampMessageEnum.AUTHENTICATE, sig, {}]);
         }
     }
 
@@ -405,7 +399,6 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
 
     // Return object
     return {
-        logon,
         call,
         register,
         publish,
@@ -434,7 +427,4 @@ export const connectWampChannel = (
     makeLogger: MakeLogger = makeNullLogger
 ): Observable<WampChannel> =>
     makeObservableWebSocket(url, 'wamp.2.json').pipe(
-        map(ws => createWampChannelFromWs(ws, makeLogger)),
-        switchMap(channel => channel.logon(realm, auth).then(_ => channel)),
-        map(({logon, ...channel}): WampChannel => channel)
-    );
+        switchMap(ws => createWampChannelFromWs(ws, realm, auth, makeLogger)));

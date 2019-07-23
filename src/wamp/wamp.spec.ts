@@ -17,11 +17,15 @@ describe('wamp', () => {
     const prepareWampChannel = async () => {
         const receive$ = new Subject<string>();
         const mockWebSocket = makeMockWebSocket(receive$);
-        spyOn(mockWebSocket, 'send');
-        const channel = createWampChannelFromWs(mockWebSocket, makeNullLogger, 100);
+        const makeLogger = makeNullLogger;
         // Uncomment this to enable logging
-        // const channel = createWampChannelFromWs(mockWebSocket, makeConsoleLogger, 100);
+        // const makeLogger = makeConsoleLogger;
+        const channelPromise = createWampChannelFromWs(mockWebSocket, 'fakeRealm', undefined, makeLogger, 100);
+        receive$.next('[2, 123, {}]');
+        await Promise.resolve();
+        spyOn(mockWebSocket, 'send');
 
+        const channel = await channelPromise;
         return { channel, mockWebSocket, receive$ };
     }
 
