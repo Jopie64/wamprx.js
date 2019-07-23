@@ -177,6 +177,26 @@ describe('wamp', () => {
             expect(result).toEqual([[['Let me process that...']], [[1]], [[2]], [[3]], [['Done!']]]);
         });
 
+        it('handles last message without payload as only a completion message', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+
+            const callThing$ = channel.call('thing', ['I\'m calling you']);
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(0);
+
+            let result: any[] = [];
+            callThing$.pipe(toArray()).subscribe(it => result = it);
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(1);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[48,101,{"receive_progress":true},"thing",["I\'m calling you"]]');
+            expect(result).toEqual([]);
+
+            receive$.next('[50,101,{"progress":true},[1]]');
+            receive$.next('[50,101,{"progress":true},[2]]');
+            receive$.next('[50,101,{"progress":true},[3]]');
+            receive$.next('[50,101,{}]'); // No payload: a completion message
+            await handleQueuedEvents();
+            expect(result).toEqual([[[1]], [[2]], [[3]]]);
+        });
+
         it('will cancel a call', async () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
 

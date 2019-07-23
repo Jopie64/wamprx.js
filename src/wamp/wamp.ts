@@ -1,5 +1,6 @@
 import { Observable, of, merge, throwError, defer, Subscription } from 'rxjs';
-import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap, startWith, takeUntil } from 'rxjs/operators';
+import { switchMap, map, take, takeWhile, finalize,
+    shareReplay, flatMap, startWith, takeUntil, filter } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket abstraction interface needed for this WAMP implementation
@@ -287,6 +288,9 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
                     };
                 }))
         ),
+        // When it is the last received message and it has no arguments, it is
+        // merely a completion message. So don't emit the payload of it.
+        filter(([,,{progress}, args]) => progress || !!args),
         map(([,,, ...args]) => args),
         logObs(`call ${uri}`));
 
@@ -323,7 +327,7 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
                             message: 'function call has been cancelled'
                         }))
                     )),
-                    logObs(`invocation rsp ${initialReqId}`));
+                    logObs(`invocation rsp ${invocationReqId}`));
                 if (details.receive_progress) {
                     funcRsp$.subscribe(
                         // Next has payload
