@@ -1,5 +1,5 @@
 import { Observable, of, merge, throwError, defer, Subscription } from 'rxjs';
-import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap, tap, startWith } from 'rxjs/operators';
+import { switchMap, map, take, takeWhile, finalize, shareReplay, flatMap, startWith, takeUntil } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket abstraction interface needed for this WAMP implementation
@@ -152,6 +152,7 @@ type WampUnregisterMsg = [WampMessageEnum.UNREGISTER, number, number];
 type WampUnregisteredMsg = [WampMessageEnum.UNREGISTERED, number];
 type WampInvocationMsg = [WampMessageEnum.INVOCATION, number, number, InvocationMsgDetails, Args?, Dict?];
 type WampYieldMsg = [WampMessageEnum.YIELD, number, YieldMsgOptions, Args?, Dict?];
+type WampInterruptMsg = [WampMessageEnum.INTERRUPT, number, CancelMsgOptions];
 
 // Pubsub publisher
 type WampPublishMsg = [WampMessageEnum.PUBLISH, number, PublishMsgDetails, string, Args?, Dict?];
@@ -169,7 +170,7 @@ type WampMessage =
     WampErrorMsg |
     WampCallMsg | WampResultMsg | WampCancelMsg |
     WampRegisterMsg | WampRegisteredMsg | WampUnregisterMsg | WampUnregisteredMsg |
-    WampInvocationMsg | WampYieldMsg |
+    WampInvocationMsg | WampYieldMsg | WampInterruptMsg |
     WampSubscribeMsg | WampSubscribedMsg | WampUnsubscribeMsg | WampUnsubscribedMsg | WampEventMsg |
     WampPublishMsg | WampPublishedMsg;
 
@@ -299,6 +300,7 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
     const registered$ = divide(([, reqId]: WampRegisteredMsg) => reqId, receive$<WampRegisteredMsg>(WampMessageEnum.REGISTERED));
     const unregistered$ = divide(([, reqId]: WampUnregisteredMsg) => reqId, receive$<WampUnregisteredMsg>(WampMessageEnum.UNREGISTERED));
     const invocation$ = divide(([,,registrationId]: WampInvocationMsg) => registrationId, receive$<WampInvocationMsg>(WampMessageEnum.INVOCATION));
+    const interrupt$ = divide(([, invocationId]: WampInterruptMsg) => invocationId, receive$<WampInterruptMsg>(WampMessageEnum.INTERRUPT));
 
     const register = async (uri: string, func: RegisteredFunc) => {
         const registerReqId = ++nextReqId;
@@ -320,6 +322,13 @@ export const createWampChannelFromWs = (ws: WampWebSocket, makeLogger: MakeLogge
                 const sendError = (error: any) => send([WampMessageEnum.ERROR, WampMessageEnum.INVOCATION, invocationReqId,
                     {}, error.uri || 'wamp.error', [error.message || {error}]]);
                 const funcRsp$ = func(args, dict).pipe(
+                    takeUntil(interrupt$(invocationReqId).pipe(
+                        take(1),
+                        flatMap(_ => throwError({
+                            uri: 'wamp.error.cancelled',
+                            message: 'function call has been cancelled'
+                        }))
+                    )),
                     logObs(`invocation rsp ${initialReqId}`));
                 if (details.receive_progress) {
                     funcRsp$.subscribe(

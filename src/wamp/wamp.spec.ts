@@ -376,6 +376,49 @@ describe('wamp', () => {
             receive$.next('[68,1000,123,{},["arg"]]');
             expect(funcs.func1).toHaveBeenCalledTimes(0);
         });
+
+        it('handles a progressive function call error', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+            const funcRsp$ = new Subject<ArgsAndDict>();
+            const funcs = {
+                func1: () => funcRsp$
+            };
+            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+
+            channel.register('my.function1', funcs.func1);
+            receive$.next('[65,101,123]'); // Func registered
+            await Promise.resolve();
+
+            // Call the function
+            receive$.next('[68,1000,123,{"receive_progress": true},[123, "abc"],{"some": "data"}]');
+
+            // Send an error
+            funcRsp$.error({message: 'something went wrong...'});
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(2);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[8,68,1000,{},"wamp.error",["something went wrong..."]]');
+        });
+
+        it('handles a progressive function call interrupt', async () => {
+            const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
+            let cancelled = false;
+            const funcRsp$ = new Observable<ArgsAndDict>(_ => () => cancelled = true);
+            const funcs = {
+                func1: () => funcRsp$
+            };
+            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+
+            channel.register('my.function1', funcs.func1);
+            receive$.next('[65,101,123]'); // Func registered
+            await Promise.resolve();
+
+            // Call the function
+            receive$.next('[68,1000,123,{"receive_progress": true}]');
+            expect(cancelled).toBeFalsy();
+            receive$.next('[69,1000,{"mode":"kill"}]');
+            expect(cancelled).toBeTruthy();
+            expect(mockWebSocket.send).toHaveBeenCalledTimes(2);
+            expect(mockWebSocket.send).toHaveBeenCalledWith('[8,68,1000,{},"wamp.error.cancelled",["function call has been cancelled"]]');
+        });
     });
 
     describe('publication', () => {
