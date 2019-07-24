@@ -19,7 +19,7 @@ connectWampChannel('ws://my.wamp.url/ws', 'realm1').pipe(
 Or imperatively:
 
 ```typescript
-const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1').toPromise();
+const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1'));
 
 const [[answer]] = await channel.call('add', [1, 2]).toPromise();
 
@@ -32,6 +32,18 @@ if (answer !== 3) {
 
 Or any combination of it.
 
+## Imperative way
+
+Note that when you want to use the imperative way, you can't simply use `connectWampChannel(...).toPromise()`, but you have to use the `toPromise()` method from wamprx. That is because the `channel$` observable returned from `connectWampChannel(...)` should be treated as a resource. Which is to say, it connects when it is subscribed, and *it disconnects when it is unsubscribed*. So when you use `.toPromise()`, it will unsubscribe and hence disconnect the channel once it returns.
+
+When you use the imperative method, a channel can be closed again by calling:
+
+```typescript
+channel.unsubscribe();
+```
+
+## Destructuring
+
 Note the strange looking `[[answer]]`. This is actually [destructuring](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment) the WAMP response which is of type `ArgsAndDict`. ArgsAndDict is a tuple of an array (`Args`) and a dictionary (object) (`Dict`), which in WAMP is the usual way to pass arguments or return values. `[[answer]]` is hence selecting the first argument of the `Args`.
 
 If you can't (or don't want to) use destructuring for some reason, you can achieve the same result like this:
@@ -39,6 +51,14 @@ If you can't (or don't want to) use destructuring for some reason, you can achie
 ```typescript
 const argsAndDict = await channel.call('add', [1, 2]).toPromise();
 const answer = argsAndDict[0][0]; // First [0] selecting args, second for selecting first arg
+```
+
+## Registering a function
+
+```typescript
+const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1'));
+
+const registration = channel.register('add', ([a, b]) => of([[a + b]]);
 ```
 
 ## With authentication
@@ -49,7 +69,7 @@ const auth = {
     authmethods: ['ticket'],
     challenge: (method, extra) => 'some ticket'
 };
-const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1', auth).toPromise();
+const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1', auth));
 ```
 
 ## Using it in node.js
@@ -63,7 +83,20 @@ import * as WebSocket from 'ws';
 const useWs = makeObservableWebSocket(
     (url, protocol) => new WebSocket(url, protocol));
 
-const channel = await connectWampChannel('ws://my.wamp.url/ws', 'realm1', undefined, useWs).toPromise();
+const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1', undefined, useWs));
+```
+
+## Reconnect on lost connection
+
+wamprx.js doesn't support autoreconnect natively. However, since it is based on RxJS, it is accomplished easily by using RxJS operators.
+
+When the wamp channel disconnects, or is not able to connect, it will emit an error. To reconnect simply use `retryWhen()` like this:
+
+```typescript
+connectWampChannel('ws://my.wamp.url/ws', 'realm1').pipe(
+    // Retry every 5 seconds...
+    retryWhen(errors => errors.pipe(delay(5000)))
+    .subscribe(connectedChannel => ...);
 ```
 
 # WAMP features support
