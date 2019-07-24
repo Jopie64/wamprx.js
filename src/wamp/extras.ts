@@ -1,6 +1,6 @@
 import { Observable, Unsubscribable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { RegisteredFunc } from './wamp';
+import { RegisteredFunc, WampChannel } from './wamp';
 
 export const toPromise = <T>(resource$: Observable<T>) =>
     new Promise<T & Unsubscribable>((resolve, reject) => {
@@ -16,3 +16,6 @@ export const toPromise = <T>(resource$: Observable<T>) =>
 
 export const toWampFunc = (origFunc: (...args: any[]) => Observable<any>): RegisteredFunc =>
     ([...args]) => origFunc(...args).pipe(map(it => [[it]]));
+
+export const wampCall = (channel: WampChannel, uri: string, ...args: any[]): Observable<any> =>
+    channel.call(uri, args).pipe(map(([[ret]]) => ret));

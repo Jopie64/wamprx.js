@@ -32,6 +32,23 @@ if (answer !== 3) {
 
 Or any combination of it.
 
+## Helper to call functions in a more natural way
+
+To call simple WAMP functions in a more natural way, you can use `wampCall()` like this:
+
+```typescript
+const answer = await wampCall(channel, 'add', 1, 2).toPromise();
+```
+
+Or turn it into a normal method first to call it later:
+
+```typescript
+const add = (a: number, b: number): Promise<number> =>
+    wampCall(channel, 'add', a, b).toPromise();
+
+const answer = await add(1, 2);
+```
+
 ## Imperative way
 
 Note that when you want to use the imperative way, you can't simply use `connectWampChannel(...).toPromise()`, but you have to use the `toPromise()` method from wamprx. That is because the `channel$` observable returned from `connectWampChannel(...)` should be treated as a resource. Which is to say, it connects when it is subscribed, and *it disconnects when it is unsubscribed*. So when you use `.toPromise()`, it will unsubscribe and hence disconnect the channel once it returns.
@@ -52,6 +69,8 @@ If you can't (or don't want to) use destructuring for some reason, you can achie
 const argsAndDict = await channel.call('add', [1, 2]).toPromise();
 const answer = argsAndDict[0][0]; // First [0] selecting args, second for selecting first arg
 ```
+
+or simply use `wampCall()`. See above.
 
 ## Registering a function
 
