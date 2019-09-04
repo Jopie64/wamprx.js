@@ -290,7 +290,7 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
         ),
         // When it is the last received message and it has no arguments, it is
         // merely a completion message. So don't emit the payload of it.
-        filter(([,,{progress}, args]) => progress || !!args),
+        filter(([,,{progress}, args]) => progress || (!!args && args.length > 0)),
         map(([,,, ...args]) => args),
         logObs(`call ${uri}`));
 
@@ -370,7 +370,7 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
 
     // publish
     const published$ = divide(([, reqId]: WampPublishedMsg) => reqId, receive$<WampPublishedMsg>(WampMessageEnum.PUBLISHED));
-    
+
     const publish = (uri: string, args?: Args, dict?: Dict) => {
         const reqId = ++nextReqId;
         send([WampMessageEnum.PUBLISH, reqId, { acknowledge: true}, uri, args, dict]);
