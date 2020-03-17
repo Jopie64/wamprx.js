@@ -284,6 +284,7 @@ describe('wamp', () => {
             expect(subs).toBeUndefined();
             receive$.next('[65,101,123]');
             await Promise.resolve();
+            await Promise.resolve();
             expect(subs).toEqual(jasmine.any(Subscription));
         });
 
@@ -295,6 +296,7 @@ describe('wamp', () => {
             expect(error).toBeUndefined();
             receive$.next('[8,64,101,{},"wamp.error.procedure_already_exists"]');
             await Promise.resolve();
+            await Promise.resolve();
             expect(error).toEqual([{}, 'wamp.error.procedure_already_exists']);
         });
 
@@ -302,7 +304,7 @@ describe('wamp', () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
             const funcRsp$ = new Subject<ArgsAndDict>();
             const funcs = {
-                func1: () => funcRsp$
+                func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
             spyOn(funcs, 'func1').and.returnValue(funcRsp$);
 
@@ -330,7 +332,7 @@ describe('wamp', () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
             const funcRsp$ = new Subject<ArgsAndDict>();
             const funcs = {
-                func1: () => funcRsp$
+                func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
             spyOn(funcs, 'func1').and.returnValue(funcRsp$);
 
@@ -357,7 +359,7 @@ describe('wamp', () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
             const funcRsp$ = new Subject<ArgsAndDict>();
             const funcs = {
-                func1: () => funcRsp$
+                func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
             spyOn(funcs, 'func1').and.returnValue(funcRsp$);
 
@@ -382,7 +384,7 @@ describe('wamp', () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
             const funcRsp$ = new Subject<ArgsAndDict>();
             const funcs = {
-                func1: () => funcRsp$
+                func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
             spyOn(funcs, 'func1').and.returnValue(funcRsp$);
 
@@ -405,7 +407,7 @@ describe('wamp', () => {
             const { channel, mockWebSocket, receive$ } = await prepareWampChannel();
             const funcRsp$ = new Subject<ArgsAndDict>();
             const funcs = {
-                func1: () => funcRsp$
+                func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
             spyOn(funcs, 'func1').and.returnValue(funcRsp$);
 
@@ -427,7 +429,7 @@ describe('wamp', () => {
             let cancelled = false;
             const funcRsp$ = new Observable<ArgsAndDict>(_ => () => cancelled = true);
             const funcs = {
-                func1: () => funcRsp$
+                func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
             spyOn(funcs, 'func1').and.returnValue(funcRsp$);
 
