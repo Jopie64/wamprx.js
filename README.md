@@ -80,7 +80,7 @@ const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm
 const registration = channel.register('add', ([a, b]) => of([[a + b]]);
 ```
 
-Most of the time, you will probably only register simple functions with a list of arguments and and a simple return value. In those cases you don't need to bother with WAMP's `ArgsAndDict` type, and you can use `toWampFunc()` for that like this:
+Most of the time, you will probably only register simple functions with a list of arguments and a simple return value. In those cases you don't need to bother with WAMP's `ArgsAndDict` type, and you can use `toWampFunc()` for that like this:
 
 ```typescript
 // simple function to be registered:
