@@ -15,7 +15,7 @@ export const toPromise = <T>(resource$: Observable<T>) =>
     });
 
 export const toWampFunc = (origFunc: (...args: any[]) => Observable<any>): RegisteredFunc =>
-    ([...args]) => origFunc(...args).pipe(map(it => [[it]]));
+    args => origFunc(...(args || [])).pipe(map(it => [[it]]));
 
-export const wampCall = (channel: WampChannel, uri: string, ...args: any[]): Observable<any> =>
-    channel.call(uri, args).pipe(map(([[ret]]) => ret));
+export const wampCall = <T = any>(channel: WampChannel, uri: string, ...args: any[]): Observable<T> =>
+    channel.call(uri, args).pipe(map(([ret]) => (ret || [])[0]));
