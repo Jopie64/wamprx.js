@@ -3,5 +3,8 @@
     "spec_dir": "src",
     "spec_files": ["**/*.spec.ts"],
     "oneFailurePerSpec": false,
-    "random": true
+    "random": true,
+    "helpers": [
+        "jasmine-typescript-helper.js"
+    ]
 }

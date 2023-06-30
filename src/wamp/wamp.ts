@@ -1,6 +1,6 @@
-import { Observable, of, merge, throwError, defer, Subscription } from 'rxjs';
+import { Observable, of, merge, throwError, defer, Subscription, lastValueFrom, firstValueFrom } from 'rxjs';
 import { switchMap, map, take, takeWhile, finalize,
-    shareReplay, flatMap, startWith, takeUntil, filter } from 'rxjs/operators';
+    shareReplay, takeUntil, filter, mergeMap } from 'rxjs/operators';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket abstraction interface needed for this WAMP implementation
@@ -193,7 +193,7 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
         map(data => JSON.parse(data) as WampMessage),
         logObs('receive'));
 
-    const getMsgOfType = divide(([msgType]) => msgType, message$);
+    const getMsgOfType = divide(([msgType]: WampMessage) => msgType, message$);
 
     // Hopefully we find a way to not require all this casting stuff.
     // Type T should be derivable from msgType somehow...
@@ -228,10 +228,10 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
         receive$<WampWelcomeMsg>(WampMessageEnum.WELCOME),
         receive$<WampChallengeMsg>(WampMessageEnum.CHALLENGE),
         receive$<WampAbortMsg>(WampMessageEnum.ABORT)
-            .pipe(flatMap(([, ...error]) => throwError(error)))
-    ).pipe(take(1));
+            .pipe(mergeMap(([, ...error]) => throwError(() => error)))
+    );
     while(true) {
-        const welcomeOrChallenge = await welcomeOrChallenge$.toPromise();
+        const welcomeOrChallenge = await firstValueFrom(welcomeOrChallenge$);
         if (welcomeOrChallenge[0] === WampMessageEnum.WELCOME) {
             break;
         }
@@ -241,12 +241,7 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
         const [, method, extra ] = welcomeOrChallenge;
         const sig = auth.challenge(method, extra);
         if (Array.isArray(sig)) {
-            const msg = [WampMessageEnum.AUTHENTICATE, ...sig];
-            // Expected type of msg should be [WampMessageEnum.AUTHENTICATE, string, Dict]
-            // which is the signature of WampAuthenticateMsg.
-            // But current version of TypeScript makes it (string | WampMessageEnum | Dict)[]
-            // Hence we need a cast here :(
-            send(msg as WampAuthenticateMsg);
+            send([WampMessageEnum.AUTHENTICATE, ...sig]);
         } else {
             send([WampMessageEnum.AUTHENTICATE, sig, {}]);
         }
@@ -256,7 +251,7 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
     let nextReqId = initialReqId || Math.floor(Math.random() * 16777216);
     const error$ = divide(([,, reqId]: WampErrorMsg) => reqId, receive$<WampErrorMsg>(WampMessageEnum.ERROR));
     const throwWhenError$ = (reqId: number) => error$(reqId).pipe(
-        switchMap(([,,, ...e]) => throwError(e)));
+        switchMap(([,,, ...e]) => throwError(() => e)));
 
     // *** RPC
     // Caller
@@ -295,20 +290,20 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
         logObs(`call ${uri}`));
 
     // Callee
-    const registered$ = divide(([, reqId]: WampRegisteredMsg) => reqId, receive$<WampRegisteredMsg>(WampMessageEnum.REGISTERED));
+    const registered$   = divide(([, reqId]: WampRegisteredMsg) => reqId, receive$<WampRegisteredMsg>(WampMessageEnum.REGISTERED));
     const unregistered$ = divide(([, reqId]: WampUnregisteredMsg) => reqId, receive$<WampUnregisteredMsg>(WampMessageEnum.UNREGISTERED));
-    const invocation$ = divide(([,,registrationId]: WampInvocationMsg) => registrationId, receive$<WampInvocationMsg>(WampMessageEnum.INVOCATION));
-    const interrupt$ = divide(([, invocationId]: WampInterruptMsg) => invocationId, receive$<WampInterruptMsg>(WampMessageEnum.INTERRUPT));
+    const invocation$   = divide(([,,registrationId]: WampInvocationMsg) => registrationId, receive$<WampInvocationMsg>(WampMessageEnum.INVOCATION));
+    const interrupt$    = divide(([, invocationId]: WampInterruptMsg) => invocationId, receive$<WampInterruptMsg>(WampMessageEnum.INTERRUPT));
 
     const register = async (uri: string, func: RegisteredFunc) => {
         const registerReqId = ++nextReqId;
         send([WampMessageEnum.REGISTER, registerReqId, { receive_progress: true }, uri]);
 
-        const registrationId = await merge(
+        const registrationId = await firstValueFrom(merge(
             registered$(registerReqId).pipe(
                 map(([,,registrationId]) => registrationId)),
             throwWhenError$(registerReqId)
-        ).pipe(take(1)).toPromise();
+        ));
 
         // Subscription to return
         const subs = new Subscription();
@@ -322,27 +317,24 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
                 const funcRsp$ = func(args, dict).pipe(
                     takeUntil(interrupt$(invocationReqId).pipe(
                         take(1),
-                        flatMap(_ => throwError({
+                        mergeMap(_ => throwError(() => ({
                             uri: 'wamp.error.cancelled',
                             message: 'function call has been cancelled'
-                        }))
+                        })))
                     )),
                     logObs(`invocation rsp ${invocationReqId}`));
                 if (details.receive_progress) {
-                    funcRsp$.subscribe(
-                        // Next has payload
-                        ([rspArgs, rspDict]) =>
+                    funcRsp$.subscribe({
+                        next: ([rspArgs, rspDict]) => // Next has payload
                             send([WampMessageEnum.YIELD, invocationReqId, { progress: true }, rspArgs, rspDict]),
-                        sendError,
+                        error: sendError,
                         // Final result doesn't have payload
-                        () => send([WampMessageEnum.YIELD, invocationReqId, {}])
-                    );
+                        complete: () => send([WampMessageEnum.YIELD, invocationReqId, {}])
+                    });
                 } else {
                     // Does not expect progressive result, so just send final result or an empty
                     // payload when no payload was emitted.
-                    funcRsp$.pipe(
-                        startWith([]))
-                        .toPromise()
+                    lastValueFrom(funcRsp$, { defaultValue: [] })
                         .then(([rspArgs, rspDict]) =>
                             send([WampMessageEnum.YIELD, invocationReqId, { }, rspArgs, rspDict]))
                         .catch(sendError);
@@ -356,10 +348,10 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
             // Although we're not interested in whether deregistration succeeded,
             // lets still wait for the response, so it won't be some unexpected msg
             // we receive.
-            await merge(
-                    unregistered$(unregisterReqId).pipe(take(1)),
+            await firstValueFrom(merge(
+                    unregistered$(unregisterReqId),
                     throwWhenError$(unregisterReqId)
-                ).toPromise()
+                ))
                 // Make sure fire and forget exception doesn't fall through
                 .catch(_ => {});
         }));
@@ -374,11 +366,11 @@ export const createWampChannelFromWs = async (ws: WampWebSocket, realm: string, 
     const publish = (uri: string, args?: Args, dict?: Dict) => {
         const reqId = ++nextReqId;
         send([WampMessageEnum.PUBLISH, reqId, { acknowledge: true}, uri, args, dict]);
-        return merge(
+        return firstValueFrom(merge(
             published$(reqId).pipe(
                 map(([,,publicationId]) => publicationId)),
             throwWhenError$(reqId)
-        ).pipe(take(1)).toPromise();
+        ));
     }
 
     // subscribe

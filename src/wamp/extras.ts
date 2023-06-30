@@ -5,13 +5,13 @@ import { RegisteredFunc, WampChannel } from './wamp';
 export const toPromise = <T>(resource$: Observable<T>) =>
     new Promise<T & Unsubscribable>((resolve, reject) => {
         const subscription: Unsubscribable = resource$
-            .subscribe(resource =>
-                resolve({
+            .subscribe({
+                next: resource => resolve({
                     ...resource,
                     unsubscribe: () => subscription.unsubscribe()
                 }),
-                reject
-            );
+                error: reject
+            });
     });
 
 export const toWampFunc = (origFunc: (...args: any[]) => Observable<any>): RegisteredFunc =>

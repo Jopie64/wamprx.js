@@ -1,4 +1,4 @@
-import { EMPTY, of } from 'rxjs';
+import { EMPTY, of, lastValueFrom } from 'rxjs';
 import {toWampFunc, wampCall} from './extras';
 
 describe('extras', () => {
@@ -9,7 +9,7 @@ describe('extras', () => {
             const add = (a: number, b: number) => of(a + b);
             const wampAdd = toWampFunc(add);
 
-            const argsAndDictResult = await wampAdd([2, 3]).toPromise();
+            const argsAndDictResult = await lastValueFrom(wampAdd([2, 3]));
             expect(argsAndDictResult[0]![0]).toBe(5);
         });
 
@@ -22,7 +22,7 @@ describe('extras', () => {
             const wampAdd = toWampFunc(doSideEffect);
 
             expect(sideIsEffected).toBeFalsy();
-            const argsAndDictResult = await wampAdd().toPromise();
+            const argsAndDictResult = await lastValueFrom(wampAdd(), { defaultValue: undefined });
             expect(sideIsEffected).toBeTruthy();
             expect(argsAndDictResult).toBeUndefined();
         });
@@ -46,20 +46,20 @@ describe('extras', () => {
         });
 
         it('makes sure a wamp RPC can be called JavaScript style', async () => {
-            const result = await wampCall<string>(channel, 'nl.wamprx.do_something', 'first', 'second').toPromise();
+            const result = await lastValueFrom(wampCall<string>(channel, 'nl.wamprx.do_something', 'first', 'second'));
             expect(result).toBe('returnMe');
             expect(channel.call).toHaveBeenCalledWith('nl.wamprx.do_something', ['first', 'second']);
         });
 
         it('handles no arguments correctly', async () => {
-            const result = await wampCall<string>(channel, 'nl.wamprx.do_something').toPromise();
+            const result = await lastValueFrom(wampCall<string>(channel, 'nl.wamprx.do_something'));
             expect(result).toBe('returnMe');
             expect(channel.call).toHaveBeenCalledWith('nl.wamprx.do_something', []);
         });
 
         it('handles no return value correctly', async () => {
             channel.call = jasmine.createSpy('call').and.returnValue(EMPTY);
-            const result = await wampCall(channel, 'nl.wamprx.do_something').toPromise();
+            const result = await lastValueFrom(wampCall(channel, 'nl.wamprx.do_something'), { defaultValue: undefined });
             expect(result).toBeUndefined();
             expect(channel.call).toHaveBeenCalledWith('nl.wamprx.do_something', []);
         });
