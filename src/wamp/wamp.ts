@@ -1,6 +1,5 @@
-import { Observable, of, merge, throwError, defer, Subscription, lastValueFrom, firstValueFrom } from 'rxjs';
-import { switchMap, map, take, takeWhile, finalize,
-    shareReplay, takeUntil, filter, mergeMap } from 'rxjs/operators';
+import { Observable, of, merge, throwError, defer, Subscription, lastValueFrom, firstValueFrom,
+    switchMap, map, take, takeWhile, finalize, shareReplay, takeUntil, filter, mergeMap } from 'rxjs';
 import { divide, hookObs, ILogger, logSubUnsub } from 'rxjs-utilities';
 
 // Minimal WebSocket abstraction interface needed for this WAMP implementation

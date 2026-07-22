@@ -1,5 +1,4 @@
-import { Observable, Unsubscribable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Observable, Unsubscribable, map } from 'rxjs';
 import { RegisteredFunc, WampChannel } from './wamp';
 
 export const toPromise = <T>(resource$: Observable<T>) =>
