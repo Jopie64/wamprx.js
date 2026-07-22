@@ -1,5 +1,6 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EMPTY, of, lastValueFrom } from 'rxjs';
-import {toWampFunc, wampCall} from './extras';
+import { toWampFunc, wampCall } from './extras';
 
 describe('extras', () => {
 
@@ -29,19 +30,14 @@ describe('extras', () => {
     });
 
     describe('wampCall', () => {
-        let channel: {
-            call: jasmine.Spy<jasmine.Func>;
-            register: jasmine.Spy<jasmine.Func>;
-            publish: jasmine.Spy<jasmine.Func>;
-            subscribe: jasmine.Spy<jasmine.Func>;
-        };
+        let channel: any;
 
         beforeEach(() => {
             channel = {
-                call:      jasmine.createSpy('call').and.returnValue(of([['returnMe']])),
-                register:  jasmine.createSpy('register'),
-                publish:   jasmine.createSpy('publish'),
-                subscribe: jasmine.createSpy('subscribe')
+                call:      vi.fn().mockReturnValue(of([['returnMe']])),
+                register:  vi.fn(),
+                publish:   vi.fn(),
+                subscribe: vi.fn()
             };
         });
 
@@ -58,7 +54,7 @@ describe('extras', () => {
         });
 
         it('handles no return value correctly', async () => {
-            channel.call = jasmine.createSpy('call').and.returnValue(EMPTY);
+            channel.call = vi.fn().mockReturnValue(EMPTY);
             const result = await lastValueFrom(wampCall(channel, 'nl.wamprx.do_something'), { defaultValue: undefined });
             expect(result).toBeUndefined();
             expect(channel.call).toHaveBeenCalledWith('nl.wamprx.do_something', []);

@@ -1,7 +1,8 @@
-import { Observable, Subject, of, concat, never, empty, Subscription } from 'rxjs';
+import { describe, it, expect, vi } from 'vitest';
+import { Observable, Subject, of, concat, never, Subscription } from 'rxjs';
 import { WampWebSocket, connectWampChannel, WampChannel, createWampChannelFromWs,
     makeNullLogger, LoginAuth, ArgsAndDict, makeConsoleLogger } from './wamp';
-import { toArray } from 'rxjs/operators';
+import { toArray } from 'rxjs';
 
 describe('wamp', () => {
 
@@ -23,7 +24,7 @@ describe('wamp', () => {
         const channelPromise = createWampChannelFromWs(mockWebSocket, 'fakeRealm', undefined, makeLogger, 100);
         receive$.next('[2, 123, {}]');
         await Promise.resolve();
-        spyOn(mockWebSocket, 'send');
+        vi.spyOn(mockWebSocket, 'send');
 
         const channel = await channelPromise;
         return { channel, mockWebSocket, receive$ };
@@ -33,7 +34,7 @@ describe('wamp', () => {
         it('does basic login flow correctly', async () => {
             const receive$ = new Subject<string>();
             const mockWebSocket = makeMockWebSocket(receive$);
-            spyOn(mockWebSocket, 'send');
+            vi.spyOn(mockWebSocket, 'send');
             const connectWebSocket = connectMockWebSocket(concat(of(mockWebSocket), never()));
 
             const channel$ = connectWampChannel('fakeurl', 'fakeRealm', undefined, connectWebSocket);
@@ -87,7 +88,7 @@ describe('wamp', () => {
         it('does login flow with auth correctly', async () => {
             const receive$ = new Subject<string>();
             const mockWebSocket = makeMockWebSocket(receive$);
-            spyOn(mockWebSocket, 'send');
+            vi.spyOn(mockWebSocket, 'send');
             const connectWebSocket = connectMockWebSocket(concat(of(mockWebSocket), never()));
 
             const auth: LoginAuth = {
@@ -95,7 +96,7 @@ describe('wamp', () => {
                 authmethods: ['ticket'],
                 challenge: () => 'some ticket'
             };
-            spyOn(auth, 'challenge').and.returnValue('some ticket');
+            vi.spyOn(auth, 'challenge').mockReturnValue('some ticket');
 
             const channel$ = connectWampChannel('fakeurl', 'fakeRealm', auth, connectWebSocket);
 
@@ -285,7 +286,7 @@ describe('wamp', () => {
             receive$.next('[65,101,123]');
             await Promise.resolve();
             await Promise.resolve();
-            expect(subs).toEqual(jasmine.any(Subscription));
+            expect(subs).toEqual(expect.any(Subscription));
         });
 
         it('fails at registering a function', async () => {
@@ -306,7 +307,7 @@ describe('wamp', () => {
             const funcs = {
                 func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
-            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+            vi.spyOn(funcs, 'func1').mockReturnValue(funcRsp$);
 
             channel.register('my.function1', funcs.func1);
             receive$.next('[65,101,123]'); // Func registered
@@ -334,7 +335,7 @@ describe('wamp', () => {
             const funcs = {
                 func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
-            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+            vi.spyOn(funcs, 'func1').mockReturnValue(funcRsp$);
 
             channel.register('my.function1', funcs.func1);
             receive$.next('[65,101,123]'); // Func registered
@@ -361,7 +362,7 @@ describe('wamp', () => {
             const funcs = {
                 func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
-            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+            vi.spyOn(funcs, 'func1').mockReturnValue(funcRsp$);
 
             channel.register('my.function1', funcs.func1);
             receive$.next('[65,101,123]'); // Func registered
@@ -386,7 +387,7 @@ describe('wamp', () => {
             const funcs = {
                 func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
-            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+            vi.spyOn(funcs, 'func1').mockReturnValue(funcRsp$);
 
             const registrationPromise = channel.register('my.function1', funcs.func1);
             receive$.next('[65,101,123]'); // Func registered
@@ -409,7 +410,7 @@ describe('wamp', () => {
             const funcs = {
                 func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
-            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+            vi.spyOn(funcs, 'func1').mockReturnValue(funcRsp$);
 
             channel.register('my.function1', funcs.func1);
             receive$.next('[65,101,123]'); // Func registered
@@ -431,7 +432,7 @@ describe('wamp', () => {
             const funcs = {
                 func1: (...argsAndDict: ArgsAndDict) => funcRsp$
             };
-            spyOn(funcs, 'func1').and.returnValue(funcRsp$);
+            vi.spyOn(funcs, 'func1').mockReturnValue(funcRsp$);
 
             channel.register('my.function1', funcs.func1);
             receive$.next('[65,101,123]'); // Func registered
