@@ -9,6 +9,9 @@ It heavily relies on [RxJS](https://www.learnrxjs.io/).
 ## Creating a channel and call an RPC
 
 ```typescript
+import { connectWampChannel } from 'wamprx';
+import { switchMap } from 'rxjs';
+
 connectWampChannel('ws://my.wamp.url/ws', 'realm1').pipe(
     switchMap(channel => channel.call('add', [1, 2])))
     .subscribe(([[answer]]) => answer !== 3
@@ -19,9 +22,12 @@ connectWampChannel('ws://my.wamp.url/ws', 'realm1').pipe(
 Or imperatively:
 
 ```typescript
+import { connectWampChannel, toPromise } from 'wamprx';
+import { firstValueFrom } from 'rxjs';
+
 const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1'));
 
-const [[answer]] = await channel.call('add', [1, 2]).toPromise();
+const [[answer]] = await firstValueFrom(channel.call('add', [1, 2]));
 
 if (answer !== 3) {
     console.error(`${answer} is the wrong answer!`);
@@ -37,21 +43,24 @@ Or any combination of it.
 To call simple WAMP functions in a more natural way, you can use `wampCall()` like this:
 
 ```typescript
-const answer = await wampCall(channel, 'add', 1, 2).toPromise();
+import { wampCall } from 'wamprx';
+import { firstValueFrom } from 'rxjs';
+
+const answer = await firstValueFrom(wampCall(channel, 'add', 1, 2));
 ```
 
 Or turn it into a normal method first to call it later:
 
 ```typescript
 const add = (a: number, b: number): Promise<number> =>
-    wampCall(channel, 'add', a, b).toPromise();
+    firstValueFrom(wampCall(channel, 'add', a, b));
 
 const answer = await add(1, 2);
 ```
 
 ## Imperative way
 
-Note that when you want to use the imperative way, you can't simply use `connectWampChannel(...).toPromise()`, but you have to use the `toPromise()` method from wamprx. That is because the `channel$` observable returned from `connectWampChannel(...)` should be treated as a resource. Which is to say, it connects when it is subscribed, and *it disconnects when it is unsubscribed*. So when you use `.toPromise()`, it will unsubscribe and hence disconnect the channel once it returns.
+Note that when you want to use the imperative way, you can't simply use `firstValueFrom(connectWampChannel(...))`, but you have to use the `toPromise()` helper method from wamprx. That is because the `channel$` observable returned from `connectWampChannel(...)` should be treated as a resource. Which is to say, it connects when it is subscribed, and *it disconnects when it is unsubscribed*. So when you use `firstValueFrom()`, it will unsubscribe and hence disconnect the channel once it returns.
 
 When you use the imperative method, a channel can be closed again by calling:
 
@@ -66,7 +75,7 @@ Note the strange looking `[[answer]]`. This is actually [destructuring](https://
 If you can't (or don't want to) use destructuring for some reason, you can achieve the same result like this:
 
 ```typescript
-const argsAndDict = await channel.call('add', [1, 2]).toPromise();
+const argsAndDict = await firstValueFrom(channel.call('add', [1, 2]));
 const answer = argsAndDict[0][0]; // First [0] selecting args, second for selecting first arg
 ```
 
@@ -77,14 +86,14 @@ or simply use `wampCall()`. See above.
 ```typescript
 const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1'));
 
-const registration = channel.register('add', ([a, b]) => of([[a + b]]);
+const registration = channel.register('add', ([a, b]) => of([[a + b]]));
 ```
 
 Most of the time, you will probably only register simple functions with a list of arguments and a simple return value. In those cases you don't need to bother with WAMP's `ArgsAndDict` type, and you can use `toWampFunc()` for that like this:
 
 ```typescript
 // simple function to be registered:
-const add = (a, b) => of(a + b);
+const add = (a: number, b: number) => of(a + b);
 
 // Using toWampFunc() to turn it into a registerable function.
 const registration = channel.register('add', toWampFunc(add));
@@ -93,7 +102,7 @@ const registration = channel.register('add', toWampFunc(add));
 To unregister:
 
 ```typescript
-registration.unsubscribe();
+(await registration).unsubscribe();
 ```
 
 ## With authentication
@@ -102,19 +111,19 @@ registration.unsubscribe();
 const auth = {
     authid: 'myId',
     authmethods: ['ticket'],
-    challenge: (method, extra) => 'some ticket'
+    challenge: (method: string, extra: Dict) => 'some ticket'
 };
 const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm1', auth));
 ```
 
 ## Using it in node.js
 
-Because the library is primarily used in the browser, it defaults to using the browsers `WebSocket` implementation.
-You can however use it in node.js too like this:
+Because the library is primarily used in the browser, it defaults to using the browser's `WebSocket` implementation.
+You can however use it in Node.js too like this:
 
 ```typescript
-import * as WebSocket from 'ws';
-//...
+import WebSocket from 'ws';
+
 const useWs = makeObservableWebSocket(
     (url, protocol) => new WebSocket(url, protocol));
 
@@ -125,12 +134,14 @@ const channel = await toPromise(connectWampChannel('ws://my.wamp.url/ws', 'realm
 
 wamprx.js doesn't support autoreconnect natively. However, since it is based on RxJS, it is accomplished easily by using RxJS operators.
 
-When the wamp channel disconnects, or is not able to connect, it will emit an error. To reconnect simply use `retryWhen()` like this:
+When the wamp channel disconnects, or is not able to connect, it will emit an error. To reconnect simply use `retry()` like this:
 
 ```typescript
+import { retry } from 'rxjs';
+
 connectWampChannel('ws://my.wamp.url/ws', 'realm1').pipe(
     // Retry every 5 seconds...
-    retryWhen(errors => errors.pipe(delay(5000)))
+    retry({ delay: 5000 }))
     .subscribe(connectedChannel => ...);
 ```
 
