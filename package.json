@@ -1,6 +1,6 @@
 {
   "name": "wamprx",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Simple WAMP client library heavily relying on rxjs and TypeScript",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -32,6 +32,6 @@
   "devDependencies": {
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
